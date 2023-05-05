@@ -1,6 +1,7 @@
 import json
 import logging
 from pymed import PubMed
+from itertools import count
 
 logging.basicConfig(level=logging.INFO)  # init logging
 
@@ -39,7 +40,7 @@ for journal in my_journals:
     query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
     logging.info(f"Running query: {query}")
     results = pubmed.query(query, max_results=1000)
-    n_tot_results = len(list(results))
+    n_tot_results = sum(1 for _ in results)
     if n_tot_results == 1000:
         logging.warning(f"Number of paper published might exceed 1000. Consider changing the query.")
     logging.info(f"Found total papers published on {journal}: {n_tot_results}")
