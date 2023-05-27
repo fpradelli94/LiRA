@@ -1,23 +1,16 @@
 import json
 import logging
 from pymed import PubMed
-from itertools import count
 
 logging.basicConfig(level=logging.INFO)  # init logging
 
 pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
 
 # init html
-outfile = "literature_review_report.html"
-literature_review_report = f'<!-- {outfile} -->\n' \
-                           '\n' \
-                           '<!DOCTYPE html>\n' \
-                           '<html lang="en">\n' \
-                           '<head>\n' \
-                               '<meta charset="utf-8">\n' \
-                               '<title>LiRA output</title>\n' \
-                           '</head>\n' \
-                           '<body>\n'
+outfile = "out/output.html"
+with open("in/template.html", "r") as infile:
+    template = infile.read()
+literature_review_report = ""
 
 # insert initial date for literature Review
 initial_date = input("Insert initial date for literature review (AAAA/MM/DD): ")
@@ -64,22 +57,25 @@ for journal in my_journals:
             lambda a: any([(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
             article_authors))
 
-        # if any, add them to the string in bold
+        # if any, add them to the string in red
         if interesting_authors:
-            interesting_authors_string = ", ".join([f"<strong>{ia}</strong>" for ia in interesting_authors])
+            interesting_authors_string = ", ...".join([f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span>' for ia in interesting_authors])
             authors_string += interesting_authors_string
 
         # finish author sting
-        authors_string += f"et al. ({({article.publication_date})})"
+        authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
 
         # add other information
-        literature_review_report += f"<p><em>{authors_string}</em></p>\n"
-        literature_review_report += f"<p><strong>{article.title}</strong></p>\n"
+        literature_review_report += f'<p class="lorem">{authors_string}</em><br>\n'
+        literature_review_report += f'<strong>{article.title}</strong><br>\n'
         article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
-        literature_review_report += f'<p><a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
-                                    f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a></p>\n'
-        literature_review_report += f"<p>{article.abstract}</p>\n"
-        literature_review_report += f"<p> ------------------------------------------------------ </p>\n"
+        literature_review_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
+                                    f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
+        literature_review_report += f'{article.abstract}<br>\n'
+        literature_review_report += f'------------------------------------------------------ </p>\n'
+
+# replace text in template
+literature_review_report = template.replace("TO_REPLACE", literature_review_report)
 
 # write report
 with open(outfile, "w") as html_file:

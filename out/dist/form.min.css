@@ -1,0 +1,121 @@
+input[type="text"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+input[type="month"],
+input[type="week"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="range"],
+input[type="number"],
+textarea,
+select {
+  font: 1em/100% sans-serif;
+}
+textarea,
+button:not(.link),
+select,
+input:not([type="checkbox"]):not([type="file"]):not([type="image"]):not([type="radio"]):not([type="range"]) {
+  padding: .6em;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+}
+textarea {
+  width: 100%;
+  height: 10rem;
+  line-height: 130%;
+}
+button:not(.link), input[type="submit"]:not(.link) {
+  color: #000;
+  cursor: pointer;
+  margin-left: .5em;
+  padding: .6em 1.5em;
+  background-color: #f6f5f4;
+  background: linear-gradient(#f6f5f4, #edebe9);
+  border: 1px outset #e9e9e9;
+  border-radius: 3px;
+  border-top-color: #ccc;
+  border-left-color: #ccc;
+}
+select {
+  background-color: inherit;
+}
+input:not(.link):focus,
+button:not(.link):focus,
+textarea:focus,
+select:focus {
+  outline: 1px solid #00f;
+  box-shadow: 0 0 .2em #00f;
+  color: #000;
+  cursor: pointer;
+}
+button:not(.link):hover,
+input[type="submit"]:not(.link):hover {
+  background-color: #f0f0f0;
+  background: linear-gradient(#f0f0f0, #d0cecc);
+}
+button:not(.link):active,
+input[type="submit"]:not(.link):active {
+  background-color: #d0cecc;
+  background: linear-gradient(#d0cecc, #f0f0f0);
+  border-style: inset;
+}
+form > strong, fieldset > strong {
+  display: inline-block;
+  margin-top: .5em;
+}
+form span {
+  margin-left: .2em;
+}
+fieldset {
+  border: 1px solid #aaa;
+}
+.vertical input[type="text"],
+.vertical input[type="search"],
+.vertical input[type="tel"],
+.vertical input[type="url"],
+.vertical input[type="email"],
+.vertical input[type="password"],
+.vertical input[type="date"],
+.vertical input[type="month"],
+.vertical input[type="week"],
+.vertical input[type="time"],
+.vertical input[type="datetime-local"],
+.vertical input[type="range"],
+.vertical input[type="number"],
+.vertical textarea,
+.vertical select {
+  display: block;
+  min-width: 20rem;
+}
+.vertical input[type="number"] {
+  min-width: 10rem;
+  width: 10rem;
+}
+.vertical label {
+  display: block;
+  margin-top: .5em;
+}
+form.horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+form.horizontal label {
+  width: 30%;
+}
+form.horizontal > div {
+  width: 65%;
+  margin-bottom: 1em;
+}
+form.horizontal input[type=submit],
+form.horizontal button[type=submit] {
+  margin-left: 35%;
+}
+form.horizontal span {
+  display: block;
+  margin-left: .2em;
+}
