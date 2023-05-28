@@ -3,18 +3,22 @@ import logging
 from pymed import PubMed
 from typing import Dict, List
 import argparse
-import datetime
+from datetime import datetime
 
 
 def init_parser():
     # init parser
     parser = argparse.ArgumentParser(description="LiRA: Literature Review Automated. "
                                                  "Based on pymed to query PubMed programmatically. ")
+    # insert day from which the research start
     parser.add_argument("--from_date", "-d",
                         type=str,
                         help="Date from which the Literature Review should start, in format AAAA/MM/DD",
                         required=True)
-
+    # get verbose
+    parser.add_argument("--verbose", "-v",
+                        action='store_true',
+                        help="Paste all loggings")
     return parser.parse_args()
 
 
@@ -89,7 +93,9 @@ def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: Pu
             n_results += 1
 
         # save result to html
-        literature_review_report += f"<h1>Results from {journal} ({n_results}/{n_tot_results})</h1>\n"
+        literature_review_report += f"<h1>Results from {journal} " \
+                                    f"({n_results}/{n_tot_results}) " \
+                                    f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
         literature_review_report += partial_report
 
     return literature_review_report
@@ -120,7 +126,9 @@ def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: Pu
             n_tot_results += 1
 
         # init new section
-        literature_review_report += f"<h1>Results from {author} ({n_tot_results})</h1>\n"
+        literature_review_report += f"<h1>Results from {author} " \
+                                    f"({n_tot_results}) " \
+                                    f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
 
         # add articles
         literature_review_report += partial_report
@@ -129,7 +137,13 @@ def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: Pu
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)  # init logging
+    # parse arguments from cli
+    args = init_parser()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)  # init logging
+    else:
+        logging.basicConfig(level=logging.WARNING)
 
     pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
 
@@ -139,8 +153,7 @@ def main():
         template = infile.read()
     literature_review_report = ""
 
-    # parse arguments from cli
-    args = init_parser()
+
 
     # load keywords
     with open("keywords.json", "r") as infile:
