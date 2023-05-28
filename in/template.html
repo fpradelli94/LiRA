@@ -1,0 +1,64 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>headers demo</title>
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="canonical" href="TODO">
+    <style>
+      @font-face {
+        font-family: 'Libre Baskerville';
+        font-style: normal;
+        font-weight: 400;
+        font-display: fallback;
+        src: url(../style/fonts/libre-baskerville.woff2) format('woff2');
+      }
+      @font-face {
+        font-family: 'Libre Baskerville';
+        font-style: normal;
+        font-weight: 700;
+        font-display: fallback;
+        src: url(../style/fonts/libre-baskerville-bold.woff2) format('woff2');
+      }
+      @font-face {
+        font-family: 'Libre Baskerville';
+        font-style: italic;
+        font-weight: 400;
+        font-display: fallback;
+        src: url(../style/fonts/libre-baskerville-italic.woff2) format('woff2');
+      }
+    </style>
+
+    <link rel="stylesheet" href="../style/base.css">
+	<link rel="stylesheet" href="../style/aside.css">
+	<link rel="stylesheet" href="../style/blockquote.css">
+	<link rel="stylesheet" href="../style/permalink.css">
+	<link rel="stylesheet" href="../style/postscript.css">
+	<link rel="stylesheet" href="../style/form.css">
+</head>
+
+<body>
+    <article class="page">
+        <label style="float: right"
+          title="Makes it easier to see how it fits in normal content">Show paragraphs of text
+          <input type="checkbox" checked="checked" id="lorem-toggle">
+        </label>
+
+        TO_REPLACE
+    </article>
+
+    <script>
+      window.addEventListener('load', function() {
+        document.getElementById('lorem-toggle').addEventListener('change', function(e) {
+          var p = document.getElementsByClassName('lorem');
+          for (var i=0; i<p.length; i++) {
+            p[i].style.display = this.checked ? 'block' : 'none';
+          }
+
+        }, false);
+      }, false);
+    </script>
+</body>
+</html>
