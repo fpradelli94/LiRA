@@ -1,7 +1,7 @@
 import json
 import logging
 from pymed import PubMed
-from typing import Dict
+from typing import Dict, List
 import argparse
 import datetime
 
@@ -16,6 +16,40 @@ def init_parser():
                         required=True)
 
     return parser.parse_args()
+
+
+def update_report(literature_review_report: str, article, authors: List[str]):
+    # manage authors
+    article_authors = article.authors  # get authors
+    first_author = article_authors[0]  # get first
+    authors_string = f"{first_author['lastname']}, {first_author['firstname']}, "  # init authors string
+
+    # parse if any of the authors is one of the authors followed by the lab
+    interesting_authors = list(filter(
+        lambda a: any(
+            [(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
+        article_authors))
+
+    # if any, add them to the string in red
+    if interesting_authors:
+        interesting_authors_string = ", ...".join(
+            [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
+             interesting_authors])
+        authors_string += interesting_authors_string
+
+    # finish author sting
+    authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
+
+    # add other information
+    literature_review_report += f'<p class="lorem" style="font-size: larger;"><strong>{article.title}</strong></p>\n'
+    literature_review_report += f'<p class="lorem">{authors_string}</em><br>\n'
+    article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
+    literature_review_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
+                                f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
+    literature_review_report += f'{article.abstract}</p>\n'
+    literature_review_report += f'<hr class="lorem">\n'
+
+    return literature_review_report
 
 
 def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: PubMed, args):
@@ -42,43 +76,54 @@ def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: Pu
         logging.info(f"Found total papers published on {journal}: {n_tot_results}")
 
         # get all the papers matching the keywords
-        allkeywords = " OR ".join([f"({keyword})" for keyword in keywords["searches"]])
-        query += f" AND ({allkeywords})"
+        all_keywords = " OR ".join([f"({keyword})" for keyword in keywords["searches"]])
+        query += f" AND ({all_keywords})"
         logging.info(f"Running query: {query}")
-        results = list(pubmed.query(query, max_results=500))
+        results = pubmed.query(query, max_results=500)
+
+        # save to partial_report
+        partial_report = ""
+        n_results = 0
+        for article in results:
+            partial_report = update_report(partial_report, article, authors)
+            n_results += 1
 
         # save result to html
-        literature_review_report += f"<h1>Results from {journal} ({len(results)}/{n_tot_results})</h1>\n"
+        literature_review_report += f"<h1>Results from {journal} ({n_results}/{n_tot_results})</h1>\n"
+        literature_review_report += partial_report
+
+    return literature_review_report
+
+
+def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: PubMed, args):
+    # get authors
+    authors = keywords["authors"]
+    my_authors = keywords["my_authors"]
+    authors += my_authors
+
+    # get initial date
+    initial_date = args.from_date
+
+    for author in my_authors:
+        pubmed_author_string = author.replace(",", "")  # remove comma for pubmed search
+
+        # make query
+        query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({pubmed_author_string}[Author])'
+        logging.info(f"Running query: {query}")
+        results = pubmed.query(query, max_results=1000)
+
+        # create partial reports
+        n_tot_results = 0
+        partial_report = ""
         for article in results:
-            # manage authors
-            article_authors = article.authors  # get authors
-            first_author = article_authors[0]  # get first
-            authors_string = f"{first_author['lastname']}, {first_author['firstname']}, "  # init authors string
+            partial_report = update_report(partial_report, article, authors)
+            n_tot_results += 1
 
-            # parse if any of the authors is one of the authors followed by the lab
-            interesting_authors = list(filter(
-                lambda a: any(
-                    [(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
-                article_authors))
+        # init new section
+        literature_review_report += f"<h1>Results from {author} ({n_tot_results})</h1>\n"
 
-            # if any, add them to the string in red
-            if interesting_authors:
-                interesting_authors_string = ", ...".join(
-                    [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
-                     interesting_authors])
-                authors_string += interesting_authors_string
-
-            # finish author sting
-            authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
-
-            # add other information
-            literature_review_report += f'<p class="lorem" style="font-size: larger;"><strong>{article.title}</strong></p>\n'
-            literature_review_report += f'<p class="lorem">{authors_string}</em><br>\n'
-            article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
-            literature_review_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
-                                        f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
-            literature_review_report += f'{article.abstract}</p>\n'
-            literature_review_report += f'<hr class="lorem">\n'
+        # add articles
+        literature_review_report += partial_report
 
     return literature_review_report
 
@@ -103,6 +148,9 @@ def main():
 
     # search in journals
     literature_review_report = search_for_journal(literature_review_report, keywords, pubmed, args)
+
+    # search for authors
+    literature_review_report = search_for_authors(literature_review_report, keywords, pubmed, args)
 
     # replace text in template
     literature_review_report = template.replace("TO_REPLACE", literature_review_report)
