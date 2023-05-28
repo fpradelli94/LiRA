@@ -1,26 +1,24 @@
 import json
 import logging
 from pymed import PubMed
+from typing import Dict
+import argparse
+import datetime
 
 
-def main():
-    logging.basicConfig(level=logging.INFO)  # init logging
+def init_parser():
+    # init parser
+    parser = argparse.ArgumentParser(description="LiRA: Literature Review Automated. "
+                                                 "Based on pymed to query PubMed programmatically. ")
+    parser.add_argument("--from_date", "-d",
+                        type=str,
+                        help="Date from which the Literature Review should start, in format AAAA/MM/DD",
+                        required=True)
 
-    pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
+    return parser.parse_args()
 
-    # init html
-    outfile = "out/output.html"
-    with open("in/template.html", "r") as infile:
-        template = infile.read()
-    literature_review_report = ""
 
-    # insert initial date for literature Review
-    initial_date = input("Insert initial date for literature review (AAAA/MM/DD): ")
-
-    # load keywords
-    with open("keywords.json", "r") as infile:
-        keywords = json.load(infile)
-
+def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: PubMed, args):
     # get journals
     my_journals = keywords["my_journals"]
 
@@ -28,6 +26,9 @@ def main():
     authors = keywords["authors"]
     my_authors = keywords["my_authors"]
     authors += my_authors
+
+    # get initial date
+    initial_date = args.from_date
 
     # iterate on journals
     for journal in my_journals:
@@ -56,12 +57,15 @@ def main():
 
             # parse if any of the authors is one of the authors followed by the lab
             interesting_authors = list(filter(
-                lambda a: any([(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
+                lambda a: any(
+                    [(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
                 article_authors))
 
             # if any, add them to the string in red
             if interesting_authors:
-                interesting_authors_string = ", ...".join([f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in interesting_authors])
+                interesting_authors_string = ", ...".join(
+                    [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
+                     interesting_authors])
                 authors_string += interesting_authors_string
 
             # finish author sting
@@ -75,6 +79,30 @@ def main():
                                         f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
             literature_review_report += f'{article.abstract}</p>\n'
             literature_review_report += f'<hr class="lorem">\n'
+
+    return literature_review_report
+
+
+def main():
+    logging.basicConfig(level=logging.INFO)  # init logging
+
+    pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
+
+    # init html
+    outfile = "out/output.html"
+    with open("in/template.html", "r") as infile:
+        template = infile.read()
+    literature_review_report = ""
+
+    # parse arguments from cli
+    args = init_parser()
+
+    # load keywords
+    with open("keywords.json", "r") as infile:
+        keywords = json.load(infile)
+
+    # search in journals
+    literature_review_report = search_for_journal(literature_review_report, keywords, pubmed, args)
 
     # replace text in template
     literature_review_report = template.replace("TO_REPLACE", literature_review_report)
