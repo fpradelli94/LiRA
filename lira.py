@@ -3,23 +3,36 @@ import logging
 from pymed import PubMed
 from typing import Dict, List
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def init_parser():
     # init parser
     parser = argparse.ArgumentParser(description="LiRA: Literature Review Automated. "
                                                  "Based on pymed to query PubMed programmatically. ")
+    # add mutually exclusive group for arguments
+    group = parser.add_mutually_exclusive_group(required=True)
     # insert day from which the research start
-    parser.add_argument("--from_date", "-d",
-                        type=str,
-                        help="Date from which the Literature Review should start, in format AAAA/MM/DD",
-                        required=True)
+    group.add_argument("--from-date", "-d",
+                       type=str,
+                       help="Date from which the Literature Review should start, in format AAAA/MM/DD")
+    group.add_argument("--for-weeks", "-w",
+                       type=int,
+                       help="Number of weeks for the literature review. LiRA will search for the n past weeks")
     # get verbose
     parser.add_argument("--verbose", "-v",
                         action='store_true',
-                        help="Paste all loggings")
+                        help="Print all loggings")
     return parser.parse_args()
+
+
+def get_initial_date(args):
+    if args.from_date is None:
+        initial_date = datetime.now() - timedelta(weeks=args.for_weeks)
+        initial_date = initial_date.strftime("%Y/%m/%d")
+    else:
+        initial_date = args.from_date
+    return initial_date
 
 
 def update_report(literature_review_report: str, article, authors: List[str]):
@@ -66,7 +79,7 @@ def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: Pu
     authors += my_authors
 
     # get initial date
-    initial_date = args.from_date
+    initial_date = get_initial_date(args)
 
     # iterate on journals
     for journal in my_journals:
@@ -108,7 +121,7 @@ def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: Pu
     authors += my_authors
 
     # get initial date
-    initial_date = args.from_date
+    initial_date = get_initial_date(args)
 
     for author in my_authors:
         pubmed_author_string = author.replace(",", "")  # remove comma for pubmed search
@@ -152,8 +165,6 @@ def main():
     with open("in/template.html", "r") as infile:
         template = infile.read()
     literature_review_report = ""
-
-
 
     # load keywords
     with open("keywords.json", "r") as infile:
