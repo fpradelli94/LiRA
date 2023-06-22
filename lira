@@ -1,2 +1,0 @@
-pipenv run python3 lira.py $@
-xdg-open out/output.html
