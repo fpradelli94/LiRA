@@ -4,6 +4,7 @@ from pymed import PubMed
 from typing import Dict, List
 import argparse
 from datetime import datetime, timedelta
+import webview
 
 
 def init_parser():
@@ -19,6 +20,10 @@ def init_parser():
     group.add_argument("--for-weeks", "-w",
                        type=int,
                        help="Number of weeks for the literature review. LiRA will search for the n past weeks")
+    # add see last output
+    group.add_argument("--last", "-L",
+                       action='store_true',
+                       help="Just opens the last LiRA output without running a search")
     # get verbose
     parser.add_argument("--verbose", "-v",
                         action='store_true',
@@ -149,15 +154,10 @@ def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: Pu
     return literature_review_report
 
 
-def main():
-    # parse arguments from cli
-    args = init_parser()
-
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO)  # init logging
-    else:
-        logging.basicConfig(level=logging.WARNING)
-
+def run_search(args):
+    """
+    Run literature reserarch.
+    """
     pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
 
     # init html
@@ -184,6 +184,26 @@ def main():
         logging.info("Saving report... ")
         html_file.write(literature_review_report)
         logging.info("Done.")
+
+
+def main():
+    # parse arguments from cli
+    args = init_parser()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)  # init logging
+    else:
+        logging.basicConfig(level=logging.WARNING)  
+
+    if args.last:
+        pass
+    else:
+        run_search(args)
+
+    with open("out/output.html", "r") as infile:
+        html_output = infile.read()
+    webview.create_window("LiRA output", html=html_output)
+    webview.start()
 
 
 if __name__ == "__main__":
