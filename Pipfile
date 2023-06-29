@@ -5,7 +5,8 @@ name = "pypi"
 
 [packages]
 requests = "*"
-pymed = {editable = true, path = "/home/francop/GitHub/pymed"}
+setuptools = "*"
+pymed = {git = "https://github.com/iacopy/pymed.git"}
 
 [dev-packages]
 
