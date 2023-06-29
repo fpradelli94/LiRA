@@ -1,36 +1,8 @@
 {
-	"searches": [
-		"'Intrinsic disorder'",
-		"'Intrinsically Disordered Protein'",
-		"IDP",
-		"VHL",
-		"ccRCC",
-		"pheocromocitoma",
-		"neuroblastoma",
-		"retinal hemangioblastoma",
-		"hemangioblastoma",
-		"renal cysts",
-		"mathematical oncology",
-		"cancer precision medicine",
-		"'phase field'",
-		"'Bioinformatic'",
-		"liquid liquid Phase separation",
-		"membraneless organels",
-		"protein aggregation",
-		"neurodevelopmental disorders"
-	],
-	"my_authors": [
-		"Semenza, Gregg",
-		"Semenza GL",
-		"Semenza, Gregg L",
-		"Ratcliffe PJ",
-		"Jones, David"
-	],
-	"my_journals": [
-		"Scientific reports",
-		"Cell reports",
-		"Proceedings of the National Academy of Sciences of the United States of America"
-	],
+	"email": "",
+	"searches": [],
+	"my_authors": [],
+	"my_journals": [],
 	"authors": [
 		"Fariselli, Piero",
 		"Casadio, Rita",

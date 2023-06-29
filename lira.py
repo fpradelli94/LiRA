@@ -1,10 +1,12 @@
 import json
 import logging
+from pathlib import Path
 from pymed import PubMed
 from typing import Dict, List
 import argparse
 from datetime import datetime, timedelta
-import webview
+import webbrowser
+import re
 
 
 def init_parser():
@@ -25,10 +27,42 @@ def init_parser():
                        action='store_true',
                        help="Just opens the last LiRA output without running a search")
     # get verbose
-    parser.add_argument("--verbose", "-v",
+    parser.add_argument("--silent", "-s",
                         action='store_true',
-                        help="Print all loggings")
+                        help="Avoid printing log messages")
     return parser.parse_args()
+
+
+def init_lira():
+    # create base folder if it does not exist
+    base_folder = Path.home() / Path(".buplira")
+    base_folder.mkdir(exist_ok=True)
+    # check if config file exists
+    config_file = base_folder / Path("config.json")
+    if config_file.exists():
+        with open(config_file, "r") as infile:
+            config = json.load(infile)
+    else:
+        # get template
+        with open("in/template_config.json", "r") as infile:
+            config = json.load(infile)
+        # insert valid email
+        email = ""
+        email_regex = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
+        while not re.fullmatch(email_regex, email):
+            email = input("Insert valid email (necessary for PyMed queries): ")
+        config["email"] = email
+        # write config file
+        with open(config_file, "w") as outfile:
+            json.dump(config, outfile)
+        # get warning
+        logging.warning("config.json file was just created and it's empty. You should fill it before using LiRA")
+
+    # generate output folder if it does not exist
+    out_folder = base_folder / Path("out")
+    out_folder.mkdir(exist_ok=True)
+
+    return config, out_folder
 
 
 def get_initial_date(args):
@@ -74,13 +108,13 @@ def update_report(literature_review_report: str, article, authors: List[str]):
     return literature_review_report
 
 
-def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: PubMed, args):
+def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     # get journals
-    my_journals = keywords["my_journals"]
+    my_journals = config["my_journals"]
 
     # get authors
-    authors = keywords["authors"]
-    my_authors = keywords["my_authors"]
+    authors = config["authors"]
+    my_authors = config["my_authors"]
     authors += my_authors
 
     # get initial date
@@ -98,7 +132,7 @@ def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: Pu
         logging.info(f"Found total papers published on {journal}: {n_tot_results}")
 
         # get all the papers matching the keywords
-        all_keywords = " OR ".join([f"({keyword})" for keyword in keywords["searches"]])
+        all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
         query += f" AND ({all_keywords})"
         logging.info(f"Running query: {query}")
         results = pubmed.query(query, max_results=500)
@@ -119,10 +153,10 @@ def search_for_journal(literature_review_report: str, keywords: Dict, pubmed: Pu
     return literature_review_report
 
 
-def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: PubMed, args):
+def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     # get authors
-    authors = keywords["authors"]
-    my_authors = keywords["my_authors"]
+    authors = config["authors"]
+    my_authors = config["my_authors"]
     authors += my_authors
 
     # get initial date
@@ -154,33 +188,35 @@ def search_for_authors(literature_review_report: str, keywords: Dict, pubmed: Pu
     return literature_review_report
 
 
-def run_search(args):
+def run_search(args, config, out_folder):
     """
     Run literature reserarch.
     """
-    pubmed = PubMed(tool="LiRA", email="franco.pradelli94@gmail.com")  # init pubmed
+    pubmed = PubMed(tool="LiRA", email=config["email"])  # init pubmed
 
     # init html
-    outfile = "out/output.html"
+    lira_output = out_folder / Path("output.html")
+
+    # open template html
     with open("in/template.html", "r") as infile:
         template = infile.read()
     literature_review_report = ""
 
-    # load keywords
-    with open("keywords.json", "r") as infile:
-        keywords = json.load(infile)
-
     # search in journals
-    literature_review_report = search_for_journal(literature_review_report, keywords, pubmed, args)
+    literature_review_report = search_for_journal(literature_review_report, config, pubmed, args)
 
     # search for authors
-    literature_review_report = search_for_authors(literature_review_report, keywords, pubmed, args)
+    literature_review_report = search_for_authors(literature_review_report, config, pubmed, args)
+
+    # check if literature review is empty
+    if literature_review_report == "":
+        logging.warning(f"LiRA output looks empty.")
 
     # replace text in template
     literature_review_report = template.replace("TO_REPLACE", literature_review_report)
 
     # write report
-    with open(outfile, "w") as html_file:
+    with open(lira_output, "w") as html_file:
         logging.info("Saving report... ")
         html_file.write(literature_review_report)
         logging.info("Done.")
@@ -190,20 +226,22 @@ def main():
     # parse arguments from cli
     args = init_parser()
 
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO)  # init logging
-    else:
-        logging.basicConfig(level=logging.WARNING)  
+    # manage initialization
+    config, out_folder = init_lira()
 
+    # manage log
+    log_level = logging.WARNING if args.silent else logging.INFO
+    logging.basicConfig(level=log_level)
+
+    # check if necessary to run search
+    lira_output_html = out_folder / Path("output.html")
     if args.last:
-        pass
+        assert lira_output_html.exists(), f"Last LiRA output not found. Should be in {lira_output_html.resolve()}"
     else:
-        run_search(args)
+        run_search(args, config, out_folder)
 
-    with open("out/output.html", "r") as infile:
-        html_output = infile.read()
-    webview.create_window("LiRA output", html=html_output)
-    webview.start()
+    # open result in browser
+    webbrowser.open(url=str(lira_output_html), new=0)
 
 
 if __name__ == "__main__":
