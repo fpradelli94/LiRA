@@ -26,19 +26,29 @@ def init_parser():
     group.add_argument("--last", "-L",
                        action='store_true',
                        help="Just opens the last LiRA output without running a search")
-    # get verbose
+    # get option for configuration file
+    parser.add_argument("--config", "-c",
+                        type=str,
+                        help="Define a configuration file to use in place of the default.")
+    # add option for silence
     parser.add_argument("--silent", "-s",
                         action='store_true',
                         help="Avoid printing log messages")
     return parser.parse_args()
 
 
-def init_lira():
+def init_lira(args):
     # create base folder if it does not exist
     base_folder = Path.home() / Path(".buplira")
     base_folder.mkdir(exist_ok=True)
+
+    # get config file
+    if args.config is None:
+        config_file = base_folder / Path("config.json")
+    else:
+        config_file = Path(args.config)
+
     # check if config file exists
-    config_file = base_folder / Path("config.json")
     if config_file.exists():
         with open(config_file, "r") as infile:
             config = json.load(infile)
@@ -104,6 +114,41 @@ def update_report(literature_review_report: str, article, authors: List[str]):
                                 f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
     literature_review_report += f'{article.abstract}</p>\n'
     literature_review_report += f'<hr class="lorem">\n'
+
+    return literature_review_report
+
+
+def search_for_keywords(literature_review_report: str, config: Dict, pubmed: PubMed, args):
+    # get authors
+    authors = config["authors"]
+    my_authors = config["my_authors"]
+    authors += my_authors
+
+    # get initial date
+    initial_date = get_initial_date(args)
+
+    # init query with date
+    query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create]))'
+    # add keywords to the query
+    all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
+    query += f" AND ({all_keywords})"
+    # run search
+    logging.info(f"Running query: {query}")
+    results = pubmed.query(query, max_results=500)
+
+    # save to partial_report
+    partial_report = ""
+    n_results = 0
+    for article in results:
+        partial_report = update_report(partial_report, article, authors)
+        n_results += 1
+
+    # save result to html
+    literature_review_report += f"<h1>Results " \
+                                f"({n_results}) " \
+                                f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+    literature_review_report += partial_report
+
 
     return literature_review_report
 
@@ -202,6 +247,10 @@ def run_search(args, config, out_folder):
         template = infile.read()
     literature_review_report = ""
 
+    # if the journals list is empty, search for simple strings
+    if len(config["my_journals"]) == 0:
+        literature_review_report = search_for_keywords(literature_review_report, config, pubmed, args)
+
     # search in journals
     literature_review_report = search_for_journal(literature_review_report, config, pubmed, args)
 
@@ -227,7 +276,7 @@ def main():
     args = init_parser()
 
     # manage initialization
-    config, out_folder = init_lira()
+    config, out_folder = init_lira(args)
 
     # manage log
     log_level = logging.WARNING if args.silent else logging.INFO
