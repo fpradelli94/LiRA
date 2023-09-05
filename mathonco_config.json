@@ -3,7 +3,29 @@
 	"searches": [
 		"'Mathematical Oncology'"
 	],
-	"my_authors": [],
+	"my_authors": [
+		"Gomez, Hector",
+		"Wu, Chengyue",
+		"Wohlmuth, Barbara",
+		"Andaloussi MA",
+		"Castillo, Edward",
+		"Lorenzo, Guillermo",
+		"Cearsuolo, Marianna",
+		"Bravo, Rafael",
+		"Lonati, Leonardo",
+		"Vrushaly, Shinglot",
+		"Chauduri, Anirban",
+		"Sainz De Mena, Diego",
+		"Woodall, Ryan",
+		"Balcerak, Michael",
+		"Brummer, Alexander",
+		"Zhang, Zirui",
+		"Rocha, Herber L",
+		"Conte, Martina",
+		"Jones, Chartese",
+		"Olumoyin, Kayode",
+		"West, Jeffrey"
+	],
 	"my_journals": [],
 	"authors": []
 
