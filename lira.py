@@ -1,18 +1,39 @@
+import re
 import json
 import logging
+import argparse
+import webbrowser
 from pathlib import Path
 from pymed import PubMed
-from typing import Dict, List
-import argparse
+from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
-import webbrowser
-import re
 
 
-def init_parser():
+""" Initialize logger """
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter("%(levelname)s:%(name)s: %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+""" Macros definition """
+CONFIG_FOLDER = Path("config")
+DEFAULT_CONFIG_FILE = CONFIG_FOLDER / Path("config.json")
+OUT_FOLDER = Path("out")
+OUT_HTML = OUT_FOLDER / Path("lira_output.html")
+
+
+def init_parser() -> argparse.Namespace:
+    """
+    Parse CLI arguments
+
+    :return: CLI arguments as namespace
+    """
     # init parser
     parser = argparse.ArgumentParser(description="LiRA: Literature Review Automated. "
                                                  "Based on pymed to query PubMed programmatically. ")
+
     # add mutually exclusive group for arguments
     group = parser.add_mutually_exclusive_group(required=True)
     # insert day from which the research start
@@ -22,14 +43,17 @@ def init_parser():
     group.add_argument("--for-weeks", "-w",
                        type=int,
                        help="Number of weeks for the literature review. LiRA will search for the n past weeks")
+
     # add see last output
     group.add_argument("--last", "-L",
                        action='store_true',
                        help="Just opens the last LiRA output without running a search")
+
     # get option for configuration file
     parser.add_argument("--config", "-c",
                         type=str,
-                        help="Define a configuration file to use in place of the default.")
+                        help="Define a configuration file to use instead of the default config.json.")
+
     # add option for silence
     parser.add_argument("--silent", "-s",
                         action='store_true',
@@ -37,22 +61,19 @@ def init_parser():
     return parser.parse_args()
 
 
-def init_lira(args):
-    # create base folder if it does not exist
-    base_folder = Path("config")
-    base_folder.mkdir(exist_ok=True)
+def init_lira():
+    """
+    Initialize LiRA for the first usage.
 
-    # get config file
-    if args.config is None:
-        config_file = base_folder / Path("config.json")
-    else:
-        config_file = Path(args.config)
+    :return:
+    """
+    # create config folder if it does not exist
+    CONFIG_FOLDER.mkdir(exist_ok=True)
 
-    # check if config file exists
-    if config_file.exists():
-        with open(config_file, "r") as infile:
-            config = json.load(infile)
-    else:
+    # check if config file exists;
+    # if yes, read the file
+    # if not, generate one based on the template
+    if not DEFAULT_CONFIG_FILE.exists():
         # get template
         with open("in/template_config.json", "r") as infile:
             config = json.load(infile)
@@ -63,16 +84,33 @@ def init_lira(args):
             email = input("Insert valid email (necessary for PyMed queries): ")
         config["email"] = email
         # write config file
-        with open(config_file, "w") as outfile:
+        with open(DEFAULT_CONFIG_FILE, "w") as outfile:
             json.dump(config, outfile)
         # get warning
-        logging.warning("config.json file was just created and it's empty. You should fill it before using LiRA")
+        logger.warning("config.json file was just created and it's empty. You should fill it before using LiRA")
 
     # generate output folder if it does not exist
-    out_folder = base_folder / Path("out")
-    out_folder.mkdir(exist_ok=True)
+    OUT_FOLDER.mkdir(exist_ok=True)
 
-    return config, out_folder
+
+def read_config(args: argparse.Namespace) -> Dict:
+    """
+    Read configuration file
+
+    :param args:
+    :return:
+    """
+    # get config file
+    if args.config is None:
+        config_file = DEFAULT_CONFIG_FILE
+    else:
+        config_file = Path(args.config)
+
+    # read config file
+    with open(config_file, "r") as infile:
+        config = json.load(infile)
+
+    return config
 
 
 def get_initial_date(args):
@@ -133,7 +171,7 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
     all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
     query += f" AND ({all_keywords})"
     # run search
-    logging.info(f"Running query: {query}")
+    logger.info(f"Running query: {query}")
     results = pubmed.query(query, max_results=500)
 
     # save to partial_report
@@ -169,17 +207,17 @@ def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubM
     for journal in my_journals:
         # get how many papers where published in total
         query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
-        logging.info(f"Running query: {query}")
+        logger.info(f"Running query: {query}")
         results = pubmed.query(query, max_results=1000)
         n_tot_results = sum(1 for _ in results)
         if n_tot_results == 1000:
-            logging.warning(f"Number of paper published might exceed 1000. Consider changing the query.")
-        logging.info(f"Found total papers published on {journal}: {n_tot_results}")
+            logger.warning(f"Number of paper published might exceed 1000. Consider changing the query.")
+        logger.info(f"Found total papers published on {journal}: {n_tot_results}")
 
         # get all the papers matching the keywords
         all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
         query += f" AND ({all_keywords})"
-        logging.info(f"Running query: {query}")
+        logger.info(f"Running query: {query}")
         results = pubmed.query(query, max_results=500)
 
         # save to partial_report
@@ -212,7 +250,7 @@ def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubM
 
         # make query
         query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({pubmed_author_string}[Author])'
-        logging.info(f"Running query: {query}")
+        logger.info(f"Running query: {query}")
         results = pubmed.query(query, max_results=1000)
 
         # create partial reports
@@ -235,12 +273,9 @@ def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubM
 
 def run_search(args, config, out_folder):
     """
-    Run literature reserarch.
+    Run literature research with PubMed.
     """
     pubmed = PubMed(tool="LiRA", email=config["email"])  # init pubmed
-
-    # init html
-    lira_output = out_folder / Path("output.html")
 
     # open template html
     with open("in/template.html", "r") as infile:
@@ -259,38 +294,40 @@ def run_search(args, config, out_folder):
 
     # check if literature review is empty
     if literature_review_report == "":
-        logging.warning(f"LiRA output looks empty.")
+        logger.warning(f"LiRA output looks empty.")
 
     # replace text in template
     literature_review_report = template.replace("TO_REPLACE", literature_review_report)
 
     # write report
-    with open(lira_output, "w") as html_file:
-        logging.info("Saving report... ")
+    with open(OUT_HTML, "w") as html_file:
+        logger.info("Saving report... ")
         html_file.write(literature_review_report)
-        logging.info("Done.")
+        logger.info("Done.")
 
 
 def main():
     # parse arguments from cli
     args = init_parser()
 
-    # manage initialization
-    config, out_folder = init_lira(args)
+    # initialize LiRA
+    init_lira()
+
+    # get config file
+    config = read_config(args)
 
     # manage log
     log_level = logging.WARNING if args.silent else logging.INFO
-    logging.basicConfig(level=log_level)
+    logger.setLevel(log_level)
 
-    # check if necessary to run search
-    lira_output_html = out_folder / Path("output.html")
+    # if args.last is true, check if OUT_HTML exists; else run_search
     if args.last:
-        assert lira_output_html.exists(), f"Last LiRA output not found. Should be in {lira_output_html.resolve()}"
+        assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
     else:
-        run_search(args, config, out_folder)
+        run_search(args, config, OUT_FOLDER)
 
     # open result in browser
-    webbrowser.open(url=str(lira_output_html), new=0)
+    webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
 
 
 if __name__ == "__main__":
