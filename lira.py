@@ -157,9 +157,18 @@ def update_report(literature_review_report: str, article, authors: List[str]):
 
 
 def search_for_keywords(literature_review_report: str, config: Dict, pubmed: PubMed, args):
+    """
+    Search the keywords in PubMed
+    
+    :param literature_review_report:
+    :param config:
+    :param pubmed:
+    :param args:
+    :return:
+    """
     # get authors
-    authors = config["authors"]
-    my_authors = config["my_authors"]
+    authors = config["highlight_authors"]
+    my_authors = config["authors"]
     authors += my_authors
 
     # get initial date
@@ -168,7 +177,7 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
     # init query with date
     query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create]))'
     # add keywords to the query
-    all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
+    all_keywords = " OR ".join([f"({keyword})" for keyword in config["keywords"]])
     query += f" AND ({all_keywords})"
     # run search
     logger.info(f"Running query: {query}")
@@ -193,11 +202,11 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
 
 def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     # get journals
-    my_journals = config["my_journals"]
+    my_journals = config["journals"]
 
     # get authors
-    authors = config["authors"]
-    my_authors = config["my_authors"]
+    authors = config["highlight_authors"]
+    my_authors = config["authors"]
     authors += my_authors
 
     # get initial date
@@ -215,7 +224,7 @@ def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubM
         logger.info(f"Found total papers published on {journal}: {n_tot_results}")
 
         # get all the papers matching the keywords
-        all_keywords = " OR ".join([f"({keyword})" for keyword in config["searches"]])
+        all_keywords = " OR ".join([f"({keyword})" for keyword in config["keywords"]])
         query += f" AND ({all_keywords})"
         logger.info(f"Running query: {query}")
         results = pubmed.query(query, max_results=500)
@@ -238,8 +247,8 @@ def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubM
 
 def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     # get authors
-    authors = config["authors"]
-    my_authors = config["my_authors"]
+    authors = config["highlight_authors"]
+    my_authors = config["authors"]
     authors += my_authors
 
     # get initial date
@@ -283,7 +292,7 @@ def run_search(args, config, out_folder):
     literature_review_report = ""
 
     # if the journals list is empty, search for simple strings
-    if len(config["my_journals"]) == 0:
+    if len(config["journals"]) == 0:
         literature_review_report = search_for_keywords(literature_review_report, config, pubmed, args)
 
     # search in journals
