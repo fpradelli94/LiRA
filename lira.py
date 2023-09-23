@@ -58,6 +58,11 @@ def init_parser() -> argparse.Namespace:
     parser.add_argument("--silent", "-s",
                         action='store_true',
                         help="Avoid printing log messages")
+
+    # add 'everywhere' argument to search in all pubmed
+    parser.add_argument("--everywhere", "-E",
+                        action="store_true",
+                        help="Search everywhere in PubMed")
     return parser.parse_args()
 
 
@@ -159,7 +164,7 @@ def update_report(literature_review_report: str, article, authors: List[str]):
 def search_for_keywords(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     """
     Search the keywords in PubMed
-    
+
     :param literature_review_report:
     :param config:
     :param pubmed:
@@ -195,14 +200,16 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
                                 f"({n_results}) " \
                                 f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
     literature_review_report += partial_report
-
-
     return literature_review_report
 
 
 def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubMed, args):
     # get journals
     my_journals = config["journals"]
+
+    # check number of journals
+    if len(my_journals) == 0:
+        logger.warning("No Journals found. To run a query in all pubmed, use the flag '--everywhere'")
 
     # get authors
     authors = config["highlight_authors"]
@@ -280,7 +287,7 @@ def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubM
     return literature_review_report
 
 
-def run_search(args, config, out_folder):
+def run_search(args, config):
     """
     Run literature research with PubMed.
     """
@@ -291,26 +298,30 @@ def run_search(args, config, out_folder):
         template = infile.read()
     literature_review_report = ""
 
-    # if the journals list is empty, search for simple strings
-    if len(config["journals"]) == 0:
+    # if 'everywhere' is true, search everywhere in PubMed. Else search in journals
+    if args.everywhere:
+        # warn the user if journals list is not empty
+        if len(config["journals"]) > 0:
+            logger.warning("Using the '--everywhere' flag. Journals will be ignored.")
+        # search everywhere
         literature_review_report = search_for_keywords(literature_review_report, config, pubmed, args)
-
-    # search in journals
-    literature_review_report = search_for_journal(literature_review_report, config, pubmed, args)
+    else:
+        # search in journals
+        literature_review_report = search_for_journal(literature_review_report, config, pubmed, args)
 
     # search for authors
     literature_review_report = search_for_authors(literature_review_report, config, pubmed, args)
 
     # check if literature review is empty
     if literature_review_report == "":
-        logger.warning(f"LiRA output looks empty.")
+        logger.warning(f"LiRA output is empty.")
 
     # replace text in template
     literature_review_report = template.replace("TO_REPLACE", literature_review_report)
 
     # write report
     with open(OUT_HTML, "w") as html_file:
-        logger.info("Saving report... ")
+        logger.info("Saving HTML report... ")
         html_file.write(literature_review_report)
         logger.info("Done.")
 
@@ -333,7 +344,7 @@ def main():
     if args.last:
         assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
     else:
-        run_search(args, config, OUT_FOLDER)
+        run_search(args, config)
 
     # open result in browser
     webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
