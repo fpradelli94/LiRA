@@ -39,7 +39,7 @@ def init_parser():
 
 def init_lira(args):
     # create base folder if it does not exist
-    base_folder = Path.home() / Path(".buplira")
+    base_folder = Path("config")
     base_folder.mkdir(exist_ok=True)
 
     # get config file
