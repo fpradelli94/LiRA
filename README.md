@@ -12,13 +12,18 @@ I created LiRA mainly for myself, but feel free to use it if you filnd it useful
 All you need is on this README! Just scroll down to know how to install and use LiRA.
   
 ## Installation
+Clone this repository:
+```shell
+git clone https://github.com/fpradelli94/LiRA.git
+```
+... todo ...
+
 
 ## Usage
 
 ## Release History  
   
-* 14 Apr 2022: Added Mocafe version to report generation
-* 24 Jan 2021: Released Mocafe 1.0.0 
+* 
   
 ## Meta
 Franco Pradelli (franco.pradelli94@gmail.com)
