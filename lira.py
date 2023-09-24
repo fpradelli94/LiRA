@@ -5,7 +5,7 @@ import argparse
 import webbrowser
 from pathlib import Path
 from pymed import PubMed
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from datetime import datetime, timedelta
 
 
@@ -22,6 +22,7 @@ CONFIG_FOLDER = Path("config")
 DEFAULT_CONFIG_FILE = CONFIG_FOLDER / Path("config.json")
 OUT_FOLDER = Path("out")
 OUT_HTML = OUT_FOLDER / Path("lira_output.html")
+DEFAULT_PYMED_MAX_RESULTS = 500
 
 
 def init_parser() -> argparse.Namespace:
@@ -59,10 +60,17 @@ def init_parser() -> argparse.Namespace:
                         action='store_true',
                         help="Avoid printing log messages")
 
-    # add 'everywhere' argument to search in all pubmed
+    # add '--everywhere' argument to search in all pubmed
     parser.add_argument("--everywhere", "-E",
                         action="store_true",
                         help="Search everywhere in PubMed")
+
+    # add '--max_results_for_query' to update the maximum number of results
+    parser.add_argument("--max_results_for_query",
+                        type=int,
+                        help=f"Change the maximum number of results for each executed query. Default is "
+                             f"{DEFAULT_PYMED_MAX_RESULTS}.\n"
+                             f"Notice: the higher this value is, the higher will be the time to perform the search.")
     return parser.parse_args()
 
 
@@ -118,6 +126,14 @@ def read_config(args: argparse.Namespace) -> Dict:
     return config
 
 
+def get_max_results_for_query(args: argparse.Namespace):
+    if args.max_results_for_query is not None:
+        max_results_for_query = args.max_results_for_query
+    else:
+        max_results_for_query = DEFAULT_PYMED_MAX_RESULTS
+    return max_results_for_query
+
+
 def get_initial_date(args):
     if args.from_date is None:
         initial_date = datetime.now() - timedelta(weeks=args.for_weeks)
@@ -161,7 +177,10 @@ def update_report(literature_review_report: str, article, authors: List[str]):
     return literature_review_report
 
 
-def search_for_keywords(literature_review_report: str, config: Dict, pubmed: PubMed, args):
+def search_for_keywords(literature_review_report: str,
+                        config: Dict,
+                        pubmed: PubMed,
+                        args: argparse.Namespace):
     """
     Search the keywords in PubMed
 
@@ -184,9 +203,11 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
     # add keywords to the query
     all_keywords = " OR ".join([f"({keyword})" for keyword in config["keywords"]])
     query += f" AND ({all_keywords})"
+    # get max results for query
+    max_results_for_query = get_max_results_for_query(args)
     # run search
-    logger.info(f"Running query: {query}")
-    results = pubmed.query(query, max_results=500)
+    logger.info(f"Running query (max res: {max_results_for_query}: {query}")
+    results = pubmed.query(query, max_results=max_results_for_query)
 
     # save to partial_report
     partial_report = ""
@@ -203,7 +224,10 @@ def search_for_keywords(literature_review_report: str, config: Dict, pubmed: Pub
     return literature_review_report
 
 
-def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubMed, args):
+def search_for_journal(literature_review_report: str,
+                       config: Dict,
+                       pubmed: PubMed,
+                       args: argparse.Namespace):
     # get journals
     my_journals = config["journals"]
 
@@ -219,22 +243,26 @@ def search_for_journal(literature_review_report: str, config: Dict, pubmed: PubM
     # get initial date
     initial_date = get_initial_date(args)
 
+    # get max results for query
+    max_results_for_query = get_max_results_for_query(args)
+
     # iterate on journals
     for journal in my_journals:
-        # get how many papers where published in total
+        # get how many papers where published in total in the journal
         query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
         logger.info(f"Running query: {query}")
-        results = pubmed.query(query, max_results=1000)
+        results = pubmed.query(query, max_results=max_results_for_query)
         n_tot_results = sum(1 for _ in results)
-        if n_tot_results == 1000:
-            logger.warning(f"Number of paper published might exceed 1000. Consider changing the query.")
+        if n_tot_results == max_results_for_query:
+            logger.warning(f"Number of paper published might exceed {max_results_for_query}. "
+                           f"Consider changing the max results for query using the flag '--max_results_for_query'.")
         logger.info(f"Found total papers published on {journal}: {n_tot_results}")
 
         # get all the papers matching the keywords
         all_keywords = " OR ".join([f"({keyword})" for keyword in config["keywords"]])
         query += f" AND ({all_keywords})"
         logger.info(f"Running query: {query}")
-        results = pubmed.query(query, max_results=500)
+        results = pubmed.query(query, max_results=max_results_for_query)
 
         # save to partial_report
         partial_report = ""
@@ -261,13 +289,16 @@ def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubM
     # get initial date
     initial_date = get_initial_date(args)
 
+    # get max results for query
+    max_results_for_query = get_max_results_for_query(args)
+
     for author in my_authors:
         pubmed_author_string = author.replace(",", "")  # remove comma for pubmed search
 
         # make query
         query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({pubmed_author_string}[Author])'
         logger.info(f"Running query: {query}")
-        results = pubmed.query(query, max_results=1000)
+        results = pubmed.query(query, max_results=max_results_for_query)
 
         # create partial reports
         n_tot_results = 0
