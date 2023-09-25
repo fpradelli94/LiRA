@@ -2,3 +2,6 @@ out/*
 .idea/
 buplira/
 config/
+Pipfile
+Pipfile.lock
+
