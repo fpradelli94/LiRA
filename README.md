@@ -45,9 +45,8 @@ This will generate an empty configuration file for LiRA.
 
 Start filling the `config.json` file with your email (necessary to do programatic searches on PubMed):
 ```json
-# config/config.json
 {
-   "email": "",  <----- Place your email here
+   "email": "PLACE YOU EMAIL HERE",
    "keywords": [],
    "authors": [],
    "journals": [],
@@ -58,7 +57,6 @@ Start filling the `config.json` file with your email (necessary to do programati
 Then, you can add your keywords, authors, and journals of interest in the configuration file. For instance, a 
 meaningful configuration file might look like this:
 ```json
-# config/config.json
 {
    "email": "example@gmail.com",
    "keywords": [
@@ -130,7 +128,6 @@ pipenv run python3 lira.py -d 2023/09/19 --suppress-general
 If you are not interested in any specific author or journal, it is sufficient to keep the `authors` and `journals` 
 sections empty in the `config.json` file:
 ```json
-# config/config.json
 {
    "email": "example@gmail.com",
    "keywords": [
