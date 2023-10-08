@@ -26,7 +26,7 @@ All you need is on this README!
 - [Meta](https://github.com/fpradelli94/LiRA#meta)
 - [Contributing](https://github.com/fpradelli94/LiRA#contributing)
   
-## Install (with Pipenv)
+## Install [Linux]
 If you don't have it, install [Pipenv](https://pipenv.pypa.io/en/latest/):
 ```shell
 pip install pipenv --user
