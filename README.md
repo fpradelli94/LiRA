@@ -16,7 +16,7 @@ I created LiRA mainly for myself, but feel free to use it if you find it useful.
 ## Documentation
 All you need is on this README!
 
-- [Install](https://github.com/fpradelli94/LiRA#install-with-pipenv)
+- [Install](https://github.com/fpradelli94/LiRA#install-linux)
 - [Configuration](https://github.com/fpradelli94/LiRA#configuration-required)
 - [Usage](https://github.com/fpradelli94/LiRA#usage)
 - [Need `--help`?](https://github.com/fpradelli94/LiRA#need---help)
