@@ -2,7 +2,7 @@
 ![lira](./doc/LiRA.gif)
 
 <img src="./doc/lira_logo.png" align="right"
-     alt="LiRA logo" width="178" height="178">
+     alt="LiRA logo" width="100" height="100">
 
 # LiRA: **Li**terature **R**eview **A**utomated  
   
