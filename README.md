@@ -1,9 +1,12 @@
 
 ![lira](./doc/LiRA.gif)
 
+<img src="./doc/lira_logo.png" align="right"
+     alt="LiRA logo" width="178" height="178">
+
 # LiRA: **Li**terature **R**eview **A**utomated  
   
-> Automate your weekly scientific literature review
+> :mortar_board: Automate your weekly scientific literature review
   
 **LiRA** is a CLI Python program based in PyMed to search on PubMed and get the results programmatically in a readable 
 HTML page.
@@ -11,7 +14,17 @@ HTML page.
 I created LiRA mainly for myself, but feel free to use it if you find it useful.
 
 ## Documentation
-All you need is on this README! Just scroll down to learn how to install and use LiRA.
+All you need is on this README!
+
+- [Install](https://github.com/fpradelli94/LiRA#install-with-pipenv)
+- [Configuration](https://github.com/fpradelli94/LiRA#configuration-required)
+- [Usage](https://github.com/fpradelli94/LiRA#usage)
+- [Need `--help`?](https://github.com/fpradelli94/LiRA#need---help)
+- [Release history](https://github.com/fpradelli94/LiRA#release-history)
+- [Future developments](https://github.com/fpradelli94/LiRA#future-developments)
+- [Known problems](https://github.com/fpradelli94/LiRA#known-problems)
+- [Meta](https://github.com/fpradelli94/LiRA#meta)
+- [Contributing](https://github.com/fpradelli94/LiRA#contributing)
   
 ## Install (with Pipenv)
 If you don't have it, install [Pipenv](https://pipenv.pypa.io/en/latest/):
