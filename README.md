@@ -8,7 +8,7 @@
   
 > :mortar_board: Automate your weekly scientific literature review
   
-**LiRA** is a CLI Python program based in PyMed to search on PubMed and get the results programmatically in a readable 
+**LiRA** is a CLI Python program based on PyMed to search on PubMed and get the results programmatically in a readable 
 HTML page.
 
 I created LiRA mainly for myself, but feel free to use it if you find it useful.
