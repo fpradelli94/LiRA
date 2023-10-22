@@ -7,7 +7,6 @@ from pymed import PubMed
 from typing import Dict, List
 from datetime import datetime, timedelta
 
-
 """ Initialize logger """
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
@@ -24,7 +23,7 @@ OUT_HTML = OUT_FOLDER / Path("lira_output.html")
 DEFAULT_PYMED_MAX_RESULTS = 500
 
 
-def init_parser() -> argparse.Namespace:
+def parse_cli_args() -> argparse.Namespace:
     """
     Parse CLI arguments
 
@@ -81,44 +80,6 @@ def init_parser() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def init_lira():
-    """
-    Initialize LiRA for the first usage.
-
-    :return:
-    """
-    # create config folder if it does not exist
-    CONFIG_FOLDER.mkdir(exist_ok=True)
-
-    # check if config file exists;
-    # if not, raise error
-    if not DEFAULT_CONFIG_FILE.exists():
-        raise RuntimeError(f"Configuration file not found. To work with LiRA, create a default "
-                           f"configuration file config/config.json.")
-
-    # generate output folder if it does not exist
-    OUT_FOLDER.mkdir(exist_ok=True)
-
-
-def add_keywords_to_query(query: str,
-                          config: Dict[str, str]):
-    all_keywords = " OR ".join([f"({keyword})" for keyword in config["keywords"]])
-    query += f" AND ({all_keywords})"
-    return query
-
-
-def make_pubmed_query(pubmed: PubMed,
-                      query: str,
-                      args: argparse.Namespace):
-    # get max results for query
-    max_results_for_query = get_max_results_for_query(args)
-    # run search
-    logger.info(f"Running query (max res: {max_results_for_query}): {query}")
-    results = pubmed.query(query, max_results=max_results_for_query)
-
-    return results
-
-
 def read_config(args: argparse.Namespace) -> Dict:
     """
     Read configuration file
@@ -139,283 +100,254 @@ def read_config(args: argparse.Namespace) -> Dict:
     return config
 
 
-def get_max_results_for_query(args: argparse.Namespace):
-    if args.max_results_for_query is not None:
-        max_results_for_query = args.max_results_for_query
-    else:
-        max_results_for_query = DEFAULT_PYMED_MAX_RESULTS
-    return max_results_for_query
+class LiRA:
+    def __init__(self):
+        # generate folders
+        CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
+        OUT_FOLDER.mkdir(exist_ok=True)  # generate out folder
 
+        # check if config file exists
+        assert DEFAULT_CONFIG_FILE.exists(), f"Configuration file not found. To work with LiRA, create a default " \
+                                             f"configuration file config/config.json."
 
-def get_initial_date(args):
-    if args.from_date is None:
-        initial_date = datetime.now() - timedelta(weeks=args.for_weeks)
-        initial_date = initial_date.strftime("%Y/%m/%d")
-    else:
-        initial_date = args.from_date
-    return initial_date
-
-
-def update_report(literature_review_report: str, article, authors: List[str]):
-    # manage authors
-    article_authors = article.authors  # get authors
-    if len(article_authors) > 0:
-        first_author = article_authors[0]  # get first
-        authors_string = f"{first_author['lastname']}, {first_author['firstname']}, "  # init authors string
-
-        # parse if any of the authors is one of the authors followed by the lab
-        interesting_authors = list(filter(
-            lambda a: any(
-                [(str(a['lastname']) in author) and (str(a['firstname']) in author) for author in authors]),
-            article_authors))
-
-        # if any, add them to the string in red
-        if interesting_authors:
-            interesting_authors_string = ", ...".join(
-                [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
-                 interesting_authors])
-            authors_string += interesting_authors_string
-
-        # finish author sting
-        authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
-    else:
-        authors_string = f"None {article.publication_date.strftime('%d/%m/%Y')}"
-
-    # add other information
-    literature_review_report += f'<p class="lorem" style="font-size: larger;"><strong>{article.title}</strong></p>\n'
-    literature_review_report += f'<p class="lorem">{authors_string}</em><br>\n'
-    article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
-    literature_review_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
-                                f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
-    literature_review_report += f'{article.abstract}</p>\n'
-    literature_review_report += f'<hr class="lorem">\n'
-
-    return literature_review_report
-
-
-def search_for_keywords(literature_review_report: str,
-                        config: Dict,
-                        pubmed: PubMed,
-                        args: argparse.Namespace):
-    """
-    Search the keywords in PubMed
-
-    :param literature_review_report:
-    :param config:
-    :param pubmed:
-    :param args:
-    :return:
-    """
-    # get authors
-    authors = config["highlight_authors"]
-    my_authors = config["authors"]
-    authors += my_authors
-
-    # get initial date
-    initial_date = get_initial_date(args)
-
-    # init query with date
-    query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create]))'
-    # add keywords to the query
-    query = add_keywords_to_query(query, config)
-    results = make_pubmed_query(pubmed, query, args)
-
-    # save to partial_report
-    partial_report = ""
-    n_results = 0
-    for article in results:
-        partial_report = update_report(partial_report, article, authors)
-        n_results += 1
-
-    # save result to html
-    literature_review_report += f"<h1>General results " \
-                                f"({n_results}) " \
-                                f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-    literature_review_report += partial_report
-    return literature_review_report
-
-
-def search_for_journal(literature_review_report: str,
-                       config: Dict,
-                       pubmed: PubMed,
-                       args: argparse.Namespace):
-    # get journals
-    my_journals = config["journals"]
-
-    # check number of journals
-    if len(my_journals) == 0:
-        logger.info("No Journals found")
-        return literature_review_report
-    else:
-        # get authors
-        authors = config["highlight_authors"]
-        my_authors = config["authors"]
-        authors += my_authors
-
+        # parse CLI arguments
+        self.args = parse_cli_args()
+        # get max results for search
+        if self.args.max_results_for_query is None:
+            self.max_results_for_query = DEFAULT_PYMED_MAX_RESULTS
+        else:
+            self.max_results_for_query = self.args.max_results_for_query
         # get initial date
-        initial_date = get_initial_date(args)
+        if self.args.from_date is None:
+            initial_date = datetime.now() - timedelta(weeks=self.args.for_weeks)
+            self.initial_date = initial_date.strftime("%Y/%m/%d")
+        else:
+            self.initial_date = self.args.from_date
+        # manage log
+        log_level = logging.WARNING if self.args.quiet else logging.INFO
+        logger.setLevel(log_level)
 
-        # get max results for query
-        max_results_for_query = get_max_results_for_query(args)
+        # read config
+        config = read_config(self.args)
+        # load config as properties
+        self.email = config["email"]
+        self.keywords = config["keywords"]
+        self.journals = config["journals"]
+        self.authors = config["authors"]
+        self.highlight_authors = config["highlight_authors"] + self.authors
 
-        # iterate on journals
-        for journal in my_journals:
-            # get how many papers where published in total in the journal
-            query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
-            results = make_pubmed_query(pubmed, query, args)
-            n_tot_results = sum(1 for _ in results)
-            if n_tot_results == max_results_for_query:
-                logger.warning(f"Number of paper published might exceed {max_results_for_query}. "
-                               f"Consider changing the max results for query using the flag '--max_results_for_query'.")
-            logger.info(f"Found total papers published on {journal}: {n_tot_results}")
+        # init pymed
+        self.pubmed = PubMed(tool="LiRA", email=self.email)
 
-            # if necessary, add keywords to the query
-            if args.filter_journals:
-                query = add_keywords_to_query(query, config)
+    def _get_authors_to_highlight_from_list(self, list_of_authors: List):
+        authors_to_highlight = list(filter(
+            lambda a: any([(str(a['lastname']) in ha) and (str(a['firstname']) in ha)
+                           for ha in self.highlight_authors]),
+            list_of_authors
+        ))
+        return authors_to_highlight
 
-            # run query
-            results = make_pubmed_query(pubmed, query, args)
+    def _pubmed_add_keywords_to_query(self, query: str):
+        keywords_query = " OR ".join([f"({keyword})" for keyword in self.keywords])
+        query += f" AND ({keywords_query})"
+        return query
 
-            # save to partial_report
-            partial_report = ""
-            n_results = 0
-            for article in results:
-                partial_report = update_report(partial_report, article, authors)
-                n_results += 1
+    def pubmed_make_query(self, query: str):
+        logger.info(f"Running query (max res: {self.max_results_for_query}): {query}")
+        results = self.pubmed.query(query, max_results=self.max_results_for_query)
 
-            if args.filter_journals:
-                n_results_str = f"({n_results}/{n_tot_results})"
+        return results
+
+    def _pubmed_get_partial_report_from_results(self, results):
+        partial_report = ""  # init partial report
+        n_results = 0  # init n_results
+
+        for article in results:
+            n_results += 1  # update n_results
+
+            # generate 'authors string', i.e. a string containing the first author of the paper and any other
+            # author in the list self.highlight authors
+            article_authors = article.authors  # get authors
+            if len(article_authors) > 0:
+                first_author = article_authors[0]  # get first name
+                authors_string = f"{first_author['lastname']}, {first_author['firstname']}, "  # add to authors string
+
+                # highlight authors
+                authors_to_highlight = self._get_authors_to_highlight_from_list(article_authors)
+
+                # if any, add them to the string in red
+                if authors_to_highlight:
+                    authors_to_highlight_string = ", ...".join(
+                        [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
+                         authors_to_highlight])
+                    authors_string += authors_to_highlight_string
+
+                # finish author sting
+                authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
             else:
-                n_results_str = f"({n_results})"
+                authors_string = f"None {article.publication_date.strftime('%d/%m/%Y')}"
 
-            # save result to html
-            literature_review_report += f"<h1>Results from {journal} " \
-                                        f"{n_results_str} " \
-                                        f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-            literature_review_report += partial_report
+            # add publication info to partial report
+            # 1. paper title
+            partial_report += f'<p class="lorem" style="font-size: larger;"><strong>{article.title}</strong></p>\n'
+            # 2. authors string
+            partial_report += f'<p class="lorem">{authors_string}</em><br>\n'
+            # 3. pubmed link
+            article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
+            partial_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
+                              f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
+            # 4. abstract
+            partial_report += f'{article.abstract}</p>\n'
+            partial_report += f'<hr class="lorem">\n'
 
-        return literature_review_report
+        return partial_report, n_results
 
+    def _pubmed_search_keywords(self, output_html_str: str):
+        # init query with date
+        query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+        # add keywords to the query
+        query = self._pubmed_add_keywords_to_query(query)
+        # make query
+        results = self.pubmed_make_query(query)
+        # get partial report from results
+        partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
 
-def search_for_authors(literature_review_report: str, config: Dict, pubmed: PubMed, args):
-    # get authors
-    authors = config["highlight_authors"]
-    my_authors = config["authors"]
-    authors += my_authors
+        # update output
+        output_html_str += f"<h1>General results " \
+                           f"({n_results}) " \
+                           f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+        output_html_str += partial_report
 
-    # check number of authors
-    if len(my_authors) == 0:
-        logger.info("No authors found.")
-        return literature_review_report
+        return output_html_str
 
-    # get initial date
-    initial_date = get_initial_date(args)
+    def _pubmed_search_for_journal(self, output_html_str: str):
+        # check number of journals
+        if len(self.journals) == 0:
+            logger.info("No Journals found")
+        else:
+            # iterate on journals
+            for journal in self.journals:
+                # init query with date and journal
+                query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
 
-    # generate authors query
-    query = f'(("{initial_date}"[Date - Create] : "3000"[Date - Create]))'
-    all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in config["authors"]])
-    query = f"{query} AND ({all_authors})"
+                # get total of journal papers
+                results = self.pubmed_make_query(query)
+                n_tot_results = sum(1 for _ in results)
+                if n_tot_results == self.max_results_for_query:
+                    logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
+                                   f"Consider changing the max results for query using the flag "
+                                   f"'--max_results_for_query'.")
+                logger.info(f"Found total papers published on {journal}: {n_tot_results}")
 
-    # make unfiltered query
-    results = make_pubmed_query(pubmed, query, args)
+                # if necessary, add keywords to the query
+                if self.args.filter_journals:
+                    query = self._pubmed_add_keywords_to_query(query)
 
-    # get max results for query
-    max_results_for_query = get_max_results_for_query(args)
+                # run query for journal
+                results = self.pubmed_make_query(query)
 
-    # count total number of results
-    n_tot_results = sum(1 for _ in results)
-    if n_tot_results == max_results_for_query:
-        logger.warning(f"Number of paper published might exceed {max_results_for_query}. "
-                       f"Consider changing the max results for query using the flag '--max_results_for_query'.")
-    logger.info(f"Found total papers published for authors: {n_tot_results}")
+                # get partial report form results
+                partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
 
-    # if necessary, filter authors
-    if args.filter_authors:
-        query = add_keywords_to_query(query, config)
+                # format n_results_str according to CLI
+                if self.args.filter_journals:
+                    n_results_str = f"({n_results}/{n_tot_results})"
+                else:
+                    n_results_str = f"({n_results})"
 
-    # make query
-    results = make_pubmed_query(pubmed, query, args)
+                # save result to html
+                output_html_str += f"<h1>Results from {journal} " \
+                                   f"{n_results_str} " \
+                                   f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+                output_html_str += partial_report
 
-    # create partial reports
-    n_results = 0
-    partial_report = ""
-    for article in results:
-        partial_report = update_report(partial_report, article, authors)
-        n_results += 1
+        return output_html_str
 
-    if args.filter_journals:
-        n_results_str = f"({n_results}/{n_tot_results})"
-    else:
-        n_results_str = f"({n_results})"
+    def _pubmed_search_for_authors(self, output_html_str: str):
+        # check number of authors
+        if len(self.authors) == 0:
+            logger.info("No authors found.")
 
-    # init new section
-    literature_review_report += f"<h1>Results from Authors " \
-                                f"{n_results_str} " \
-                                f"({initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+        # init authors query
+        query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+        all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in self.authors])
+        query = f"{query} AND ({all_authors})"
 
-    # add articles
-    literature_review_report += partial_report
+        # get tot results from authors
+        results = self.pubmed_make_query(query)
+        n_tot_results = sum(1 for _ in results)
+        if n_tot_results == self.max_results_for_query:
+            logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
+                           f"Consider changing the max results for query using the flag '--max_results_for_query'.")
+        logger.info(f"Found total papers published for authors: {n_tot_results}")
 
-    return literature_review_report
+        # if necessary, filter authors
+        if self.args.filter_authors:
+            query = self._pubmed_add_keywords_to_query(query)
 
+        # make query
+        results = self.pubmed_make_query(query)
 
-def run_search(args, config):
-    """
-    Run literature research with PubMed.
-    """
-    pubmed = PubMed(tool="LiRA", email=config["email"])  # init pubmed
+        # get partial report from results
+        partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
 
-    # open template html
-    with open("in/template.html", "r") as infile:
-        template = infile.read()
-    literature_review_report = ""
+        # adjust n_results_str according to user input
+        if self.args.filter_journals:
+            n_results_str = f"({n_results}/{n_tot_results})"
+        else:
+            n_results_str = f"({n_results})"
 
-    # Generate the 'general' part using keywords
-    if not args.suppress_general:
-        literature_review_report = search_for_keywords(literature_review_report, config, pubmed, args)
+        # update output
+        output_html_str += f"<h1>Results from Authors " \
+                           f"{n_results_str} " \
+                           f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+        output_html_str += partial_report
 
-    # Generate the journals part
-    literature_review_report = search_for_journal(literature_review_report, config, pubmed, args)
+        return output_html_str
 
-    # search for authors
-    literature_review_report = search_for_authors(literature_review_report, config, pubmed, args)
+    def run_pubmed_search(self):
+        # init empty output_html_str
+        output_html_str = ""
 
-    # check if literature review is empty
-    if literature_review_report == "":
-        logger.warning(f"LiRA output is empty.")
+        # Generate the 'general' part using keywords
+        if not self.args.suppress_general:
+            output_html_str = self._pubmed_search_keywords(output_html_str)
 
-    # replace text in template
-    literature_review_report = template.replace("TO_REPLACE", literature_review_report)
+        # Generate the journals part
+        output_html_str = self._pubmed_search_for_journal(output_html_str)
 
-    # write report
-    with open(OUT_HTML, "w") as html_file:
-        logger.info("Saving HTML report... ")
-        html_file.write(literature_review_report)
-        logger.info("Done.")
+        # search for authors
+        output_html_str = self._pubmed_search_for_authors(output_html_str)
+
+        # check if literature review is empty
+        if output_html_str == "":
+            logger.warning(f"LiRA output is empty.")
+
+        # replace text in template
+        with open("in/template.html", "r") as infile:
+            template = infile.read()
+        literature_review_report = template.replace("TO_REPLACE", output_html_str)
+
+        # write report
+        with open(OUT_HTML, "w") as html_file:
+            logger.info("Saving HTML report... ")
+            html_file.write(literature_review_report)
+            logger.info("Done.")
+
+    def run(self):
+        # if args.last is true, check if OUT_HTML exists; else run_search
+        if self.args.last:
+            assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
+        else:
+            self.run_pubmed_search()
+
+        # open result in browser
+        webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
 
 
 def main():
-    # parse arguments from cli
-    args = init_parser()
-
-    # initialize LiRA
-    init_lira()
-
-    # get config file
-    config = read_config(args)
-
-    # manage log
-    log_level = logging.WARNING if args.quiet else logging.INFO
-    logger.setLevel(log_level)
-
-    # if args.last is true, check if OUT_HTML exists; else run_search
-    if args.last:
-        assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
-    else:
-        run_search(args, config)
-
-    # open result in browser
-    webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
+    lira = LiRA()
+    lira.run()
 
 
 if __name__ == "__main__":
