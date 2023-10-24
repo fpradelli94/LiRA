@@ -1,6 +1,7 @@
 import json
 import logging
 import argparse
+import requests
 import webbrowser
 from pathlib import Path
 from pymed import PubMed
@@ -118,11 +119,16 @@ class LiRA:
         else:
             self.max_results_for_query = self.args.max_results_for_query
         # get initial date
+        date_format = "%Y/%m/%d"
         if self.args.from_date is None:
             initial_date = datetime.now() - timedelta(weeks=self.args.for_weeks)
-            self.initial_date = initial_date.strftime("%Y/%m/%d")
+            self.initial_date = initial_date.strftime(date_format)
         else:
             self.initial_date = self.args.from_date
+        # get time delta between now and initial date
+        time_range: timedelta = datetime.now() - datetime.strptime(self.initial_date, date_format)
+        self.timedelta_days = time_range.days
+
         # manage log
         log_level = logging.WARNING if self.args.quiet else logging.INFO
         logger.setLevel(log_level)
@@ -131,6 +137,7 @@ class LiRA:
         config = read_config(self.args)
         # load config as properties
         self.email = config["email"]
+        self.serpapi_key = config["serpapi_key"]
         self.keywords = config["keywords"]
         self.journals = config["journals"]
         self.authors = config["authors"]
@@ -138,6 +145,16 @@ class LiRA:
 
         # init pymed
         self.pubmed = PubMed(tool="LiRA", email=self.email)
+
+        # create base url for google scholar
+        self.gs_base_url = "https://serpapi.com/search?engine=google_scholar"
+
+        # init base request parameters for google scholar
+        self.gs_parameters = {
+            "api_key": self.serpapi_key,
+            "scisbd": 2,  # get results from most recent
+            "num": self.max_results_for_query
+        }
 
     def _get_authors_to_highlight_from_list(self, list_of_authors: List):
         authors_to_highlight = list(filter(
@@ -153,7 +170,7 @@ class LiRA:
         return query
 
     def pubmed_make_query(self, query: str):
-        logger.info(f"Running query (max res: {self.max_results_for_query}): {query}")
+        logger.info(f"Running PubMed query (max res: {self.max_results_for_query}): {query}")
         results = self.pubmed.query(query, max_results=self.max_results_for_query)
 
         return results
@@ -304,6 +321,82 @@ class LiRA:
         output_html_str += partial_report
 
         return output_html_str
+
+    def _gs_make_query(self, query):
+        logger.info(f"Running Google Scholar query: {query}")
+        query_params = {"q": query, **self.gs_parameters}  # get query parameters
+        r = requests.get(self.gs_base_url, params=query_params)  # make query
+        # return as json
+        return r.json()
+
+    def _gs_get_results_from_initial_date(self, results: Dict) -> List:
+        organic_results = results["organic_results"]  # get organic results
+
+        # get how many days ago the last paper on page was published
+        last_result_days_ago = int(organic_results[-1]["snippet"][0])
+
+        # if latest paper on page was published earlier than self.timedelta_days, go to next page;
+        # else, get only the elements published earlier than self.timedelta_days days
+        if last_result_days_ago <= self.timedelta_days:
+            logger.info("Searching next GS page")
+            r = requests.get(results["serpapi_pagination"]["next"])  # go to next page
+            new_organic_results = self._gs_get_results_from_initial_date(r.json())
+            return [*organic_results, *new_organic_results]
+        else:
+            output_list = [element for element in organic_results if int(element["snippet"][0]) < self.timedelta_days]
+            return output_list
+
+    def _gs_get_partial_reports_from_results(self, organic_results: List):
+        partial_report = ""  # init partial report
+        n_results = 0  # init n_results
+
+        for element in organic_results:
+            n_results += 1  # update n_results
+
+            # generate 'authors string', i.e. a string containing the first author of the paper and any other
+            # author in the list self.highlight authors
+            article_authors = element["publication_info"]["authors"]  # get authors
+            if len(article_authors) > 0:
+                first_author = article_authors[0]
+                first_author_name = first_author["name"]
+                first_author_link = first_author["link"]
+                authors_string = f'<a href="{first_author_link}">{first_author_name}</a> '
+            else:
+                authors_string = f"None "
+            # finish author sting
+            publication_date = datetime.now() - timedelta(days=element["snippet"][0])
+            authors_string += f"et al. ({publication_date.strftime('%d/%m/%Y')})"
+
+            # add publication info to partial report
+            # 1. paper title
+            paper_title = element["title"]
+            partial_report += f'<p class="lorem" style="font-size: larger;"><strong>{paper_title}</strong></p>\n'
+            # 2. authors string
+            partial_report += f'<p class="lorem">{authors_string}</em><br>\n'
+            # 3. Google Scholar Link
+            paper_link = element["link"]
+            partial_report += f'<a href="{paper_link}">{paper_link}</a><br>\n'
+            # 4. snippet
+            partial_report += f'{element["snippet"]}</p>\n'
+            partial_report += f'<hr class="lorem">\n'
+
+        return partial_report, n_results
+
+    def _gs_search_for_keywords(self, output_html_str):
+        query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
+        query.replace("(", "")  # remove parenthesis
+        query.replace(")", "")  # remove parenthesis
+        query.replace(" AND ", " ")  # space correspond to AND in Google Scholar
+        query.replace("AND", " ")
+        query.replace(" OR ", "|")  # OR correspond to | in Google Scholar
+        query.replace("OR", "|")
+        query.replace("NOT ", "-")  # NOT correspond to - in Google Scholar
+
+        # make query
+        results = self._gs_make_query(query)
+
+        # get results published from the initial date
+        organic_results_from_initial_date = self._gs_get_results_from_initial_date(results)
 
     def run_pubmed_search(self):
         # init empty output_html_str
