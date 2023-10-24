@@ -5,13 +5,13 @@ import requests
 import webbrowser
 from pathlib import Path
 from pymed import PubMed
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
 
 """ Initialize logger """
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
-handler.setLevel(logging.INFO)
+handler.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(levelname)s:%(name)s: %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -101,6 +101,12 @@ def read_config(args: argparse.Namespace) -> Dict:
     return config
 
 
+def get_days_ago_for_gs_organic_result(organic_result: Dict):
+    snippet = organic_result["snippet"]
+    days_ago = int(snippet.split(" days ago ")[0])
+    return days_ago
+
+
 class LiRA:
     def __init__(self):
         # generate folders
@@ -152,7 +158,7 @@ class LiRA:
         # init base request parameters for google scholar
         self.gs_parameters = {
             "api_key": self.serpapi_key,
-            "scisbd": 2,  # get results from most recent
+            "scisbd": 1,  # get results from most recent
             "num": self.max_results_for_query
         }
 
@@ -230,7 +236,7 @@ class LiRA:
         partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
 
         # update output
-        output_html_str += f"<h1>General results " \
+        output_html_str += f"<h1>General results [PubMed]" \
                            f"({n_results}) " \
                            f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
         output_html_str += partial_report
@@ -284,43 +290,58 @@ class LiRA:
         # check number of authors
         if len(self.authors) == 0:
             logger.info("No authors found.")
-
-        # init authors query
-        query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
-        all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in self.authors])
-        query = f"{query} AND ({all_authors})"
-
-        # get tot results from authors
-        results = self.pubmed_make_query(query)
-        n_tot_results = sum(1 for _ in results)
-        if n_tot_results == self.max_results_for_query:
-            logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
-                           f"Consider changing the max results for query using the flag '--max_results_for_query'.")
-        logger.info(f"Found total papers published for authors: {n_tot_results}")
-
-        # if necessary, filter authors
-        if self.args.filter_authors:
-            query = self._pubmed_add_keywords_to_query(query)
-
-        # make query
-        results = self.pubmed_make_query(query)
-
-        # get partial report from results
-        partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
-
-        # adjust n_results_str according to user input
-        if self.args.filter_journals:
-            n_results_str = f"({n_results}/{n_tot_results})"
         else:
-            n_results_str = f"({n_results})"
+            # init authors query
+            query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+            all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in self.authors])
+            query = f"{query} AND ({all_authors})"
 
-        # update output
-        output_html_str += f"<h1>Results from Authors " \
-                           f"{n_results_str} " \
-                           f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-        output_html_str += partial_report
+            # get tot results from authors
+            results = self.pubmed_make_query(query)
+            n_tot_results = sum(1 for _ in results)
+            if n_tot_results == self.max_results_for_query:
+                logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
+                               f"Consider changing the max results for query using the flag '--max_results_for_query'.")
+            logger.info(f"Found total papers published for authors: {n_tot_results}")
+
+            # if necessary, filter authors
+            if self.args.filter_authors:
+                query = self._pubmed_add_keywords_to_query(query)
+
+            # make query
+            results = self.pubmed_make_query(query)
+
+            # get partial report from results
+            partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
+
+            # adjust n_results_str according to user input
+            if self.args.filter_journals:
+                n_results_str = f"({n_results}/{n_tot_results})"
+            else:
+                n_results_str = f"({n_results})"
+
+            # update output
+            output_html_str += f"<h1>Results from Authors " \
+                               f"{n_results_str} " \
+                               f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+            output_html_str += partial_report
 
         return output_html_str
+
+    def _gs_add_keywords_to_query(self, query: str):
+        keyword_query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
+        keyword_query.replace("(", "")  # remove parenthesis
+        keyword_query.replace(")", "")  # remove parenthesis
+        keyword_query.replace(" AND ", " ")  # space correspond to AND in Google Scholar
+        keyword_query.replace("AND", " ")
+        keyword_query.replace(" OR ", "|")  # OR correspond to | in Google Scholar
+        keyword_query.replace("OR", "|")
+        keyword_query.replace("NOT ", "-")  # NOT correspond to - in Google Scholar
+
+        if len(query) == 0:
+            return keyword_query
+        else:
+            return f"{query} {keyword_query}"
 
     def _gs_make_query(self, query):
         logger.info(f"Running Google Scholar query: {query}")
@@ -333,20 +354,22 @@ class LiRA:
         organic_results = results["organic_results"]  # get organic results
 
         # get how many days ago the last paper on page was published
-        last_result_days_ago = int(organic_results[-1]["snippet"][0])
+        last_result_days_ago = get_days_ago_for_gs_organic_result(organic_results[-1])
 
         # if latest paper on page was published earlier than self.timedelta_days, go to next page;
         # else, get only the elements published earlier than self.timedelta_days days
         if last_result_days_ago <= self.timedelta_days:
             logger.info("Searching next GS page")
-            r = requests.get(results["serpapi_pagination"]["next"])  # go to next page
-            new_organic_results = self._gs_get_results_from_initial_date(r.json())
+            r = requests.get(results["serpapi_pagination"]["next"], params={"api_key": self.serpapi_key})  # next page
+            next_results = r.json()
+            new_organic_results = self._gs_get_results_from_initial_date(next_results)
             return [*organic_results, *new_organic_results]
         else:
-            output_list = [element for element in organic_results if int(element["snippet"][0]) < self.timedelta_days]
+            output_list = [ores for ores in organic_results
+                           if get_days_ago_for_gs_organic_result(ores) < self.timedelta_days]
             return output_list
 
-    def _gs_get_partial_reports_from_results(self, organic_results: List):
+    def _gs_get_partial_reports_from_results(self, organic_results: List) -> Tuple[str, int]:
         partial_report = ""  # init partial report
         n_results = 0  # init n_results
 
@@ -355,16 +378,20 @@ class LiRA:
 
             # generate 'authors string', i.e. a string containing the first author of the paper and any other
             # author in the list self.highlight authors
-            article_authors = element["publication_info"]["authors"]  # get authors
-            if len(article_authors) > 0:
-                first_author = article_authors[0]
-                first_author_name = first_author["name"]
-                first_author_link = first_author["link"]
-                authors_string = f'<a href="{first_author_link}">{first_author_name}</a> '
+            if "authors" in element["publication_info"]:
+                article_authors = element["publication_info"]["authors"]  # get authors
+                if len(article_authors) > 0:
+                    first_author = article_authors[0]
+                    first_author_name = first_author["name"]
+                    first_author_link = first_author["link"]
+                    authors_string = f'<a href="{first_author_link}">{first_author_name}</a> '
+                else:
+                    authors_string = f"None "
             else:
                 authors_string = f"None "
+
             # finish author sting
-            publication_date = datetime.now() - timedelta(days=element["snippet"][0])
+            publication_date = datetime.now() - timedelta(days=get_days_ago_for_gs_organic_result(element))
             authors_string += f"et al. ({publication_date.strftime('%d/%m/%Y')})"
 
             # add publication info to partial report
@@ -382,29 +409,67 @@ class LiRA:
 
         return partial_report, n_results
 
-    def _gs_search_for_keywords(self, output_html_str):
-        query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
-        query.replace("(", "")  # remove parenthesis
-        query.replace(")", "")  # remove parenthesis
-        query.replace(" AND ", " ")  # space correspond to AND in Google Scholar
-        query.replace("AND", " ")
-        query.replace(" OR ", "|")  # OR correspond to | in Google Scholar
-        query.replace("OR", "|")
-        query.replace("NOT ", "-")  # NOT correspond to - in Google Scholar
-
+    def _gs_generate_partial_report_from_query(self, query: str, partial_report_header: str) -> str:
         # make query
         results = self._gs_make_query(query)
-
         # get results published from the initial date
         organic_results_from_initial_date = self._gs_get_results_from_initial_date(results)
+        # get partial reports from results
+        partial_report, n_results = self._gs_get_partial_reports_from_results(organic_results_from_initial_date)
+        # update output
+        output_report = f"<h1>{partial_report_header} [Google Scholar]" \
+                        f"({n_results}) " \
+                        f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+        output_report += partial_report
 
-    def run_pubmed_search(self):
+        return output_report
+
+    def _gs_search_for_keywords(self, output_html_str: str) -> str:
+        # get query for keyword
+        query = self._gs_add_keywords_to_query("")
+        # update output_html_report
+        output_html_str += self._gs_generate_partial_report_from_query(query=query,
+                                                                       partial_report_header="General results")
+        return output_html_str
+
+    def _gs_search_for_journal(self, output_html_str: str) -> str:
+        # check number of journals
+        if len(self.journals) == 0:
+            logger.info("No Journals found")
+        else:
+            # iterate on journals
+            query = "|".join([f"source:{j}" for j in self.journals])
+            # if necessary, add keywords to the query
+            if self.args.filter_journals:
+                query = self._gs_add_keywords_to_query(query)
+            # update output_html_str
+            output_html_str += self._gs_generate_partial_report_from_query(query=query,
+                                                                           partial_report_header="Results from Journals")
+        return output_html_str
+
+    def _gs_search_for_authors(self, output_html_str: str) -> str:
+        # check number of journals
+        if len(self.authors) == 0:
+            logger.info("No Authors found")
+        else:
+            query = "|".join([f"author:{a}" for a in self.authors])
+            # if necessary, add keywords to the query
+            if self.args.filter_authors:
+                query = self._gs_add_keywords_to_query(query)
+            # update output_html_str
+            output_html_str += self._gs_generate_partial_report_from_query(query=query,
+                                                                           partial_report_header="Results from Authors")
+
+        return output_html_str
+
+    def run_search(self):
         # init empty output_html_str
         output_html_str = ""
 
         # Generate the 'general' part using keywords
         if not self.args.suppress_general:
             output_html_str = self._pubmed_search_keywords(output_html_str)
+            output_html_str = self._gs_search_for_keywords(output_html_str)
 
         # Generate the journals part
         output_html_str = self._pubmed_search_for_journal(output_html_str)
@@ -432,7 +497,7 @@ class LiRA:
         if self.args.last:
             assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
         else:
-            self.run_pubmed_search()
+            self.run_search()
 
         # open result in browser
         webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
