@@ -207,6 +207,7 @@ are", and you might find papers from homonyms. To avoid homonyms, it is recommen
 keywords.
 - Usually, the authors' names in the `config` file are highlighted in red in the HTML report. However, LiRA might fail 
 sometimes due to unprecise character matching or middle names.
+- Different names between Google Scholar and Pubmed
 
 ## Meta
 Franco Pradelli (franco.pradelli94@gmail.com)
