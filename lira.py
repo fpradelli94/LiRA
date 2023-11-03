@@ -330,13 +330,13 @@ class LiRA:
 
     def _gs_add_keywords_to_query(self, query: str):
         keyword_query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
-        keyword_query.replace("(", "")  # remove parenthesis
-        keyword_query.replace(")", "")  # remove parenthesis
-        keyword_query.replace(" AND ", " ")  # space correspond to AND in Google Scholar
-        keyword_query.replace("AND", " ")
-        keyword_query.replace(" OR ", "|")  # OR correspond to | in Google Scholar
-        keyword_query.replace("OR", "|")
-        keyword_query.replace("NOT ", "-")  # NOT correspond to - in Google Scholar
+        keyword_query = keyword_query.replace("(", "")  # remove parenthesis
+        keyword_query = keyword_query.replace(")", "")  # remove parenthesis
+        keyword_query = keyword_query.replace(" AND ", " ")  # space correspond to AND in Google Scholar
+        keyword_query = keyword_query.replace("AND", " ")
+        keyword_query = keyword_query.replace(" OR ", "|")  # OR correspond to | in Google Scholar
+        keyword_query = keyword_query.replace("OR", "|")
+        keyword_query = keyword_query.replace("NOT ", "-")  # NOT correspond to - in Google Scholar
 
         if len(query) == 0:
             return keyword_query
@@ -344,11 +344,30 @@ class LiRA:
             return f"{query} {keyword_query}"
 
     def _gs_make_query(self, query):
-        logger.info(f"Running Google Scholar query: {query}")
-        query_params = {"q": query, **self.gs_parameters}  # get query parameters
-        r = requests.get(self.gs_base_url, params=query_params)  # make query
+        # divide the query in chunks
+        len_query = len(query)
+        query_frame = [0, 0]
+        frame_length = 255
+        query_list = []
+        for i, char in enumerate(query):
+            if char == '|':
+                query_frame[1] = i
+            if ((i % frame_length) == 0) and (i != 0):
+                query_list.append(query[query_frame[0]:query_frame[1]])
+                query_frame[0] = query_frame[1] + 1
+            if i == len_query - 1:
+                query_list.append(query[query_frame[0]:len_query])
+
+        # run each query
+        full_results = {}
+        logging.debug(f"Built query list: {query_list}")
+        for q in query_list:
+            logger.info(f"Running Google Scholar query: {q}")
+            query_params = {"q": q, **self.gs_parameters}  # get query parameters
+            r = requests.get(self.gs_base_url, params=query_params)  # make query
+            full_results.update(r.json())
         # return as json
-        return r.json()
+        return full_results
 
     def _gs_get_results_from_initial_date(self, results: Dict) -> List:
         organic_results = results["organic_results"]  # get organic results
@@ -452,7 +471,18 @@ class LiRA:
         if len(self.authors) == 0:
             logger.info("No Authors found")
         else:
-            query = "|".join([f"author:{a}" for a in self.authors])
+            # build the authors list in the format required by GS
+            gs_authors_list = []
+            for a in self.authors:
+                a_familiy_name:str  = a.split(',')[0]
+                a_given_name: str = a.split(',')[1]
+                if a_given_name.isupper():
+                    a_initials = a_given_name
+                else:
+                    a_initials = a_given_name.replace(' ', '')[0]
+                gs_authors_list.append(f"{a_familiy_name} {a_initials}")
+            # generate the query
+            query = "|".join([f"author:{a}" for a in gs_authors_list])
             # if necessary, add keywords to the query
             if self.args.filter_authors:
                 query = self._gs_add_keywords_to_query(query)
@@ -473,9 +503,11 @@ class LiRA:
 
         # Generate the journals part
         output_html_str = self._pubmed_search_for_journal(output_html_str)
+        output_html_str = self._gs_search_for_journal(output_html_str)
 
         # search for authors
         output_html_str = self._pubmed_search_for_authors(output_html_str)
+        output_html_str = self._gs_search_for_authors(output_html_str)
 
         # check if literature review is empty
         if output_html_str == "":
