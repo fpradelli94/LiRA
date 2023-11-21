@@ -1,5 +1,7 @@
 {
+	"engines": ["pubmed", "google_scholar"],
 	"email": "",
+	"serpapi_key": "",
 	"keywords": [],
 	"authors": [],
 	"journals": [],

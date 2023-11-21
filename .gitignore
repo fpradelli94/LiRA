@@ -4,4 +4,4 @@ buplira/
 config/
 Pipfile
 Pipfile.lock
-
+.vscode

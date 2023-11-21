@@ -1,14 +1,14 @@
 import json
 import logging
 import argparse
-import requests
 import webbrowser
 from pathlib import Path
-from pymed import PubMed
 from typing import Dict, List, Tuple
 from datetime import datetime, timedelta
+import requests
+from pymed import PubMed
 
-""" Initialize logger """
+# Initialize logger
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
@@ -16,12 +16,13 @@ formatter = logging.Formatter("%(levelname)s:%(name)s: %(message)s")
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-""" Macros definition """
+# Macros definition
 CONFIG_FOLDER = Path("config")
 DEFAULT_CONFIG_FILE = CONFIG_FOLDER / Path("config.json")
 OUT_FOLDER = Path("out")
 OUT_HTML = OUT_FOLDER / Path("lira_output.html")
 DEFAULT_PYMED_MAX_RESULTS = 500
+DATE_FORMAT = "%Y/%m/%d"
 
 
 def parse_cli_args() -> argparse.Namespace:
@@ -32,7 +33,7 @@ def parse_cli_args() -> argparse.Namespace:
     """
     # init parser
     parser = argparse.ArgumentParser(description="LiRA: Literature Review Automated. "
-                                                 "Based on pymed to query PubMed programmatically. ")
+                                                 "Based on pymed to query PubMed programmatically.")
 
     # add mutually exclusive group for arguments
     group = parser.add_mutually_exclusive_group(required=True)
@@ -102,65 +103,57 @@ def read_config(args: argparse.Namespace) -> Dict:
 
 
 def get_days_ago_for_gs_organic_result(organic_result: Dict):
+    """
+    Given a Google Scholar organic result, return how many days ago it was published.
+
+    :param organic_result: Google Scholar organic result as provided by SerpAPI
+    :return:
+    """
     snippet = organic_result["snippet"]
     days_ago = int(snippet.split(" days ago ")[0])
     return days_ago
 
 
-class LiRA:
-    def __init__(self):
-        # generate folders
-        CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
-        OUT_FOLDER.mkdir(exist_ok=True)  # generate out folder
+class EnginePipeline:
+    def __init__(self, cli_args: argparse.Namespace):
+        # save args
+        self.cli_args = cli_args
 
-        # check if config file exists
-        assert DEFAULT_CONFIG_FILE.exists(), f"Configuration file not found. To work with LiRA, create a default " \
-                                             f"configuration file config/config.json."
-
-        # parse CLI arguments
-        self.args = parse_cli_args()
         # get max results for search
-        if self.args.max_results_for_query is None:
+        if cli_args.max_results_for_query is None:
             self.max_results_for_query = DEFAULT_PYMED_MAX_RESULTS
         else:
-            self.max_results_for_query = self.args.max_results_for_query
-        # get initial date
-        date_format = "%Y/%m/%d"
-        if self.args.from_date is None:
-            initial_date = datetime.now() - timedelta(weeks=self.args.for_weeks)
-            self.initial_date = initial_date.strftime(date_format)
-        else:
-            self.initial_date = self.args.from_date
-        # get time delta between now and initial date
-        time_range: timedelta = datetime.now() - datetime.strptime(self.initial_date, date_format)
-        self.timedelta_days = time_range.days
+            self.max_results_for_query = cli_args.max_results_for_query
 
-        # manage log
-        log_level = logging.WARNING if self.args.quiet else logging.INFO
-        logger.setLevel(log_level)
+        # get initial date
+        if cli_args.from_date is None:
+            initial_date = datetime.now() - timedelta(weeks=cli_args.for_weeks)
+            self.initial_date = initial_date.strftime(DATE_FORMAT)
+        else:
+            self.initial_date = cli_args.from_date
 
         # read config
-        config = read_config(self.args)
-        # load config as properties
-        self.email = config["email"]
-        self.serpapi_key = config["serpapi_key"]
-        self.keywords = config["keywords"]
-        self.journals = config["journals"]
-        self.authors = config["authors"]
-        self.highlight_authors = config["highlight_authors"] + self.authors
+        self.config = read_config(cli_args)
+
+        # get common propreties
+        self.keywords = self.config["keywords"]
+        self.journals = self.config["journals"]
+        self.authors = self.config["authors"]
+        self.highlight_authors = self.config["highlight_authors"] + self.authors
+
+
+class PubMedPipeline(EnginePipeline):
+    """
+    Pipeline for PubMed. Uses PyMed as backend.
+    """
+    def __init__(self, cli_args: argparse.Namespace):
+        super().__init__(cli_args)
+
+        # load email
+        self.email = self.config["email"]
 
         # init pymed
         self.pubmed = PubMed(tool="LiRA", email=self.email)
-
-        # create base url for google scholar
-        self.gs_base_url = "https://serpapi.com/search?engine=google_scholar"
-
-        # init base request parameters for google scholar
-        self.gs_parameters = {
-            "api_key": self.serpapi_key,
-            "scisbd": 1,  # get results from most recent
-            "num": self.max_results_for_query
-        }
 
     def _get_authors_to_highlight_from_list(self, list_of_authors: List):
         authors_to_highlight = list(filter(
@@ -170,18 +163,18 @@ class LiRA:
         ))
         return authors_to_highlight
 
-    def _pubmed_add_keywords_to_query(self, query: str):
+    def _add_keywords_to_query(self, query: str):
         keywords_query = " OR ".join([f"({keyword})" for keyword in self.keywords])
         query += f" AND ({keywords_query})"
         return query
 
-    def pubmed_make_query(self, query: str):
+    def make_query(self, query: str):
         logger.info(f"Running PubMed query (max res: {self.max_results_for_query}): {query}")
         results = self.pubmed.query(query, max_results=self.max_results_for_query)
 
         return results
 
-    def _pubmed_get_partial_report_from_results(self, results):
+    def _get_partial_report_from_results(self, results):
         partial_report = ""  # init partial report
         n_results = 0  # init n_results
 
@@ -221,19 +214,19 @@ class LiRA:
                               f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
             # 4. abstract
             partial_report += f'{article.abstract}</p>\n'
-            partial_report += f'<hr class="lorem">\n'
+            partial_report += '<hr class="lorem">\n'
 
         return partial_report, n_results
 
-    def _pubmed_search_keywords(self, output_html_str: str):
+    def search_for_keywords(self, output_html_str: str):
         # init query with date
         query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
         # add keywords to the query
-        query = self._pubmed_add_keywords_to_query(query)
+        query = self._add_keywords_to_query(query)
         # make query
-        results = self.pubmed_make_query(query)
+        results = self.make_query(query)
         # get partial report from results
-        partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
+        partial_report, n_results = self._get_partial_report_from_results(results)
 
         # update output
         output_html_str += f"<h1>General results [PubMed]" \
@@ -243,7 +236,7 @@ class LiRA:
 
         return output_html_str
 
-    def _pubmed_search_for_journal(self, output_html_str: str):
+    def search_for_journal(self, output_html_str: str):
         # check number of journals
         if len(self.journals) == 0:
             logger.info("No Journals found")
@@ -254,7 +247,7 @@ class LiRA:
                 query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
 
                 # get total of journal papers
-                results = self.pubmed_make_query(query)
+                results = self.make_query(query)
                 n_tot_results = sum(1 for _ in results)
                 if n_tot_results == self.max_results_for_query:
                     logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
@@ -263,17 +256,17 @@ class LiRA:
                 logger.info(f"Found total papers published on {journal}: {n_tot_results}")
 
                 # if necessary, add keywords to the query
-                if self.args.filter_journals:
-                    query = self._pubmed_add_keywords_to_query(query)
+                if self.cli_args.filter_journals:
+                    query = self._add_keywords_to_query(query)
 
                 # run query for journal
-                results = self.pubmed_make_query(query)
+                results = self.make_query(query)
 
                 # get partial report form results
-                partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
+                partial_report, n_results = self._get_partial_report_from_results(results)
 
                 # format n_results_str according to CLI
-                if self.args.filter_journals:
+                if self.cli_args.filter_journals:
                     n_results_str = f"({n_results}/{n_tot_results})"
                 else:
                     n_results_str = f"({n_results})"
@@ -286,7 +279,7 @@ class LiRA:
 
         return output_html_str
 
-    def _pubmed_search_for_authors(self, output_html_str: str):
+    def search_for_authors(self, output_html_str: str):
         # check number of authors
         if len(self.authors) == 0:
             logger.info("No authors found.")
@@ -297,7 +290,7 @@ class LiRA:
             query = f"{query} AND ({all_authors})"
 
             # get tot results from authors
-            results = self.pubmed_make_query(query)
+            results = self.make_query(query)
             n_tot_results = sum(1 for _ in results)
             if n_tot_results == self.max_results_for_query:
                 logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
@@ -305,17 +298,17 @@ class LiRA:
             logger.info(f"Found total papers published for authors: {n_tot_results}")
 
             # if necessary, filter authors
-            if self.args.filter_authors:
-                query = self._pubmed_add_keywords_to_query(query)
+            if self.cli_args.filter_authors:
+                query = self._add_keywords_to_query(query)
 
             # make query
-            results = self.pubmed_make_query(query)
+            results = self.make_query(query)
 
             # get partial report from results
-            partial_report, n_results = self._pubmed_get_partial_report_from_results(results)
+            partial_report, n_results = self._get_partial_report_from_results(results)
 
             # adjust n_results_str according to user input
-            if self.args.filter_journals:
+            if self.cli_args.filter_journals:
                 n_results_str = f"({n_results}/{n_tot_results})"
             else:
                 n_results_str = f"({n_results})"
@@ -328,7 +321,32 @@ class LiRA:
 
         return output_html_str
 
-    def _gs_add_keywords_to_query(self, query: str):
+
+class GoogleScholarPipeline(EnginePipeline):
+    """
+    Pipeline for Google Scholar. Uses SerpAPI as backend.
+    """
+    def __init__(self, cli_args: argparse.Namespace):
+        super().__init__(cli_args)
+
+        # get time delta between now and initial date
+        time_range: timedelta = datetime.now() - datetime.strptime(self.initial_date, DATE_FORMAT)
+        self.timedelta_days = time_range.days
+
+        # get serpapi key
+        self.serpapi_key = self.config["serpapi_key"]
+
+        # create base url for google scholar
+        self.gs_base_url = "https://serpapi.com/search?engine=google_scholar"
+
+        # init base request parameters for google scholar
+        self.gs_parameters = {
+            "api_key": self.serpapi_key,
+            "scisbd": 1,  # get results from most recent
+            "num": self.max_results_for_query
+        }
+
+    def _add_keywords_to_query(self, query: str):
         keyword_query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
         keyword_query = keyword_query.replace("(", "")  # remove parenthesis
         keyword_query = keyword_query.replace(")", "")  # remove parenthesis
@@ -343,7 +361,7 @@ class LiRA:
         else:
             return f"{query} {keyword_query}"
 
-    def _gs_make_query(self, query):
+    def make_query(self, query):
         # divide the query in chunks
         len_query = len(query)
         query_frame = [0, 0]
@@ -369,7 +387,7 @@ class LiRA:
         # return as json
         return full_results
 
-    def _gs_get_results_from_initial_date(self, results: Dict) -> List:
+    def _get_results_from_initial_date(self, results: Dict) -> List:
         organic_results = results["organic_results"]  # get organic results
 
         # get how many days ago the last paper on page was published
@@ -381,14 +399,14 @@ class LiRA:
             logger.info("Searching next GS page")
             r = requests.get(results["serpapi_pagination"]["next"], params={"api_key": self.serpapi_key})  # next page
             next_results = r.json()
-            new_organic_results = self._gs_get_results_from_initial_date(next_results)
+            new_organic_results = self._get_results_from_initial_date(next_results)
             return [*organic_results, *new_organic_results]
         else:
             output_list = [ores for ores in organic_results
                            if get_days_ago_for_gs_organic_result(ores) < self.timedelta_days]
             return output_list
 
-    def _gs_get_partial_reports_from_results(self, organic_results: List) -> Tuple[str, int]:
+    def _get_partial_reports_from_results(self, organic_results: List) -> Tuple[str, int]:
         partial_report = ""  # init partial report
         n_results = 0  # init n_results
 
@@ -428,13 +446,13 @@ class LiRA:
 
         return partial_report, n_results
 
-    def _gs_generate_partial_report_from_query(self, query: str, partial_report_header: str) -> str:
+    def _generate_partial_report_from_query(self, query: str, partial_report_header: str) -> str:
         # make query
-        results = self._gs_make_query(query)
+        results = self.make_query(query)
         # get results published from the initial date
-        organic_results_from_initial_date = self._gs_get_results_from_initial_date(results)
+        organic_results_from_initial_date = self._get_results_from_initial_date(results)
         # get partial reports from results
-        partial_report, n_results = self._gs_get_partial_reports_from_results(organic_results_from_initial_date)
+        partial_report, n_results = self._get_partial_reports_from_results(organic_results_from_initial_date)
         # update output
         output_report = f"<h1>{partial_report_header} [Google Scholar]" \
                         f"({n_results}) " \
@@ -443,15 +461,15 @@ class LiRA:
 
         return output_report
 
-    def _gs_search_for_keywords(self, output_html_str: str) -> str:
+    def search_for_keywords(self, output_html_str: str) -> str:
         # get query for keyword
-        query = self._gs_add_keywords_to_query("")
+        query = self._add_keywords_to_query("")
         # update output_html_report
-        output_html_str += self._gs_generate_partial_report_from_query(query=query,
-                                                                       partial_report_header="General results")
+        output_html_str += self._generate_partial_report_from_query(query=query,
+                                                                    partial_report_header="General results")
         return output_html_str
 
-    def _gs_search_for_journal(self, output_html_str: str) -> str:
+    def search_for_journal(self, output_html_str: str) -> str:
         # check number of journals
         if len(self.journals) == 0:
             logger.info("No Journals found")
@@ -459,14 +477,14 @@ class LiRA:
             # iterate on journals
             query = "|".join([f"source:{j}" for j in self.journals])
             # if necessary, add keywords to the query
-            if self.args.filter_journals:
-                query = self._gs_add_keywords_to_query(query)
+            if self.cli_args.filter_journals:
+                query = self._add_keywords_to_query(query)
             # update output_html_str
-            output_html_str += self._gs_generate_partial_report_from_query(query=query,
-                                                                           partial_report_header="Results from Journals")
+            output_html_str += self._generate_partial_report_from_query(query=query,
+                                                                        partial_report_header="Results from Journals")
         return output_html_str
 
-    def _gs_search_for_authors(self, output_html_str: str) -> str:
+    def search_for_authors(self, output_html_str: str) -> str:
         # check number of journals
         if len(self.authors) == 0:
             logger.info("No Authors found")
@@ -484,60 +502,82 @@ class LiRA:
             # generate the query
             query = "|".join([f"author:{a}" for a in gs_authors_list])
             # if necessary, add keywords to the query
-            if self.args.filter_authors:
-                query = self._gs_add_keywords_to_query(query)
+            if self.cli_args.filter_authors:
+                query = self._add_keywords_to_query(query)
             # update output_html_str
-            output_html_str += self._gs_generate_partial_report_from_query(query=query,
-                                                                           partial_report_header="Results from Authors")
+            output_html_str += self._generate_partial_report_from_query(query=query,
+                                                                        partial_report_header="Results from Authors")
 
         return output_html_str
 
-    def run_search(self):
-        # init empty output_html_str
-        output_html_str = ""
 
+def run_search(args):
+    # read config
+    config = read_config(args)
+
+    # init engines
+    engines_list: List[EnginePipeline] = []
+    if "engine" in config.keys():
+        if "pubmed" in config["engine"]:
+            engines_list.append(PubMedPipeline(args))
+        if "google-scholar" in config["engine"]:
+            engines_list.append(GoogleScholarPipeline(args))
+    else:
+        engines_list.append(PubMedPipeline(args))
+        engines_list.append(GoogleScholarPipeline(args))
+
+    # init empty output_html_str
+    output_html_str = ""
+
+    for engine in engines_list:
         # Generate the 'general' part using keywords
-        if not self.args.suppress_general:
-            output_html_str = self._pubmed_search_keywords(output_html_str)
-            output_html_str = self._gs_search_for_keywords(output_html_str)
-
+        if not args.suppress_general:
+            output_html_str = engine.search_for_keywords(output_html_str)
         # Generate the journals part
-        output_html_str = self._pubmed_search_for_journal(output_html_str)
-        output_html_str = self._gs_search_for_journal(output_html_str)
+        output_html_str = engine.search_for_journal(output_html_str)
+        # Generate the authors part
+        output_html_str = engine.search_for_authors(output_html_str)
 
-        # search for authors
-        output_html_str = self._pubmed_search_for_authors(output_html_str)
-        output_html_str = self._gs_search_for_authors(output_html_str)
+    # check if literature review is empty
+    if output_html_str == "":
+        logger.warning(f"LiRA output is empty.")
 
-        # check if literature review is empty
-        if output_html_str == "":
-            logger.warning(f"LiRA output is empty.")
+    # replace text in template
+    with open("in/template.html", "r") as infile:
+        template = infile.read()
+    literature_review_report = template.replace("TO_REPLACE", output_html_str)
 
-        # replace text in template
-        with open("in/template.html", "r") as infile:
-            template = infile.read()
-        literature_review_report = template.replace("TO_REPLACE", output_html_str)
-
-        # write report
-        with open(OUT_HTML, "w") as html_file:
-            logger.info("Saving HTML report... ")
-            html_file.write(literature_review_report)
-            logger.info("Done.")
-
-    def run(self):
-        # if args.last is true, check if OUT_HTML exists; else run_search
-        if self.args.last:
-            assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
-        else:
-            self.run_search()
-
-        # open result in browser
-        webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
+    # write report
+    with open(OUT_HTML, "w") as html_file:
+        logger.info("Saving HTML report... ")
+        html_file.write(literature_review_report)
+        logger.info("Done.")
 
 
 def main():
-    lira = LiRA()
-    lira.run()
+    # generate folders
+    CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
+    OUT_FOLDER.mkdir(exist_ok=True)  # generate out folder
+
+    # check if config file exists
+    assert DEFAULT_CONFIG_FILE.exists(), f"Configuration file not found. To work with LiRA, create a default " \
+                                         f"configuration file config/config.json."
+
+    # parse CLI arguments
+    args = parse_cli_args()
+
+    # manage log
+    log_level = logging.WARNING if args.quiet else logging.INFO
+    logger.setLevel(log_level)
+    
+    # if args.last is true, check if OUT_HTML exists; else run_search
+    if args.last:
+        assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
+    else:
+        run_search(args)
+
+    # open result in browser
+    webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
 
 
 if __name__ == "__main__":

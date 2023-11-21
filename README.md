@@ -8,7 +8,7 @@
   
 > :mortar_board: Automate your weekly scientific literature review
   
-**LiRA** is a CLI Python program based on PyMed to search on PubMed and get the results programmatically in a readable 
+**LiRA** is a CLI Python program based on PyMed and SerpAPI to search on PubMed and get the results programmatically in a readable 
 HTML page.
 
 I created LiRA mainly for myself, but feel free to use it if you find it useful.
@@ -56,14 +56,17 @@ cp in/template_config.json config/config.json
 
 This will generate an empty configuration file for LiRA. 
 
-Start filling the `config.json` file with your email (necessary to do programatic searches on PubMed):
+Start filling the `config.json` file with your email (necessary to do programatic searches on PubMed) and SerpAPI key (necessary to search on Google Scholar):
+> SerpAPI is a third-party API to scrape Google Scholar. You can get your key for free [here](https://serpapi.com/)
 ```json
 {
-   "email": "PLACE YOU EMAIL HERE",
-   "keywords": [],
-   "authors": [],
-   "journals": [],
-   "highlight_authors": []
+	"engines": ["pubmed", "google_scholar"],
+	"email": "PLACE YOUR EMAIL HERE",
+	"serpapi_key": "PLACE YOUR SEPAPI KEY HERE",
+	"keywords": [],
+	"authors": [],
+	"journals": [],
+	"highlight_authors": []
 }
 ```
 
@@ -71,7 +74,9 @@ Then, you can add your keywords, authors, and journals of interest in the config
 meaningful configuration file might look like this:
 ```json
 {
+   "engines": ["pubmed", "google_scholar"],
    "email": "example@gmail.com",
+   "serpapi_key": "aobosandi392309qwjadosnasioiq"
    "keywords": [
             "Breast Cancer",
             "Omics",
@@ -120,6 +125,8 @@ generated for each journal in the `config.json`
 - **Results for Authors**: containing ALL the publications for the authors specified in the `config.json` from the 
 given date 
 
+Moreover, each engine will have its own section. For instance, if you choose to scrape from Google Scholar and Pubmed, you might end up with two "General parts", one for Google Scholar and one for Pubmed.
+
 ### Using keywords to filter Journals and Authors papers
 By default, LiRA will provide ALL the most recent publications from 
 your journals and authors of interest. If you want to get only 
@@ -142,7 +149,9 @@ If you are not interested in any specific author or journal, it is sufficient to
 sections empty in the `config.json` file:
 ```json
 {
+   "engines": ["pubmed", "google_scholar"],
    "email": "example@gmail.com",
+   "serpapi_key": "aobosandi392309qwjadosnasioiq",
    "keywords": [
             "Breast Cancer",
             "Omics",
@@ -158,14 +167,6 @@ sections empty in the `config.json` file:
 For each section, the total number of results and the time range of the search is shown in the header:
 
 ![section](./doc/section.png)
-
-If you asked for keyword filtering with `--filter-authors` or `--filter-journals`, you will also find the ratio 
-between the number of results matching the keywords and the total number of papers. 
-
-For instance, in the following section, on Nature, there were 0 papers matching the keywords among 66 total papers 
-published:
-
-![section-filtered](./doc/section_filtered.png)
 
 ### Using different configuration files
 The `config.json` file contains the default configuration for LiRA. However, you can generate different configuration 
@@ -193,10 +194,10 @@ To access all the possible arguments and ways to automate your literature resear
 ## Release History  
   
 * 09/10/2023: First release.
+* 22/11/2023: Added experimental support to Google Scholar with SerpAPI.
 
 ## Future developments
 
-* Inclusion of Google Scholar
 * Automatic generation of Bibtex files
 
 ## Known problems
@@ -207,7 +208,7 @@ are", and you might find papers from homonyms. To avoid homonyms, it is recommen
 keywords.
 - Usually, the authors' names in the `config` file are highlighted in red in the HTML report. However, LiRA might fail 
 sometimes due to unprecise character matching or middle names.
-- Different names between Google Scholar and Pubmed
+- SerpAPI is not able to retrive the full paper abastract, but only a "snippet". Thus, only a small part of the astract is displayed in LiRA.
 
 ## Meta
 Franco Pradelli (franco.pradelli94@gmail.com)
