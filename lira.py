@@ -384,6 +384,12 @@ class GoogleScholarPipeline(EnginePipeline):
             query_params = {"q": q, **self.gs_parameters}  # get query parameters
             r = requests.get(self.gs_base_url, params=query_params)  # make query
             full_results.update(r.json())
+
+        # check for error
+        if "error" in full_results.keys():
+            logger.info(f"SerpAPI Google Scholar returned the following error: {full_results['error']}")
+            return {}
+
         # return as json
         return full_results
 
@@ -449,17 +455,24 @@ class GoogleScholarPipeline(EnginePipeline):
     def _generate_partial_report_from_query(self, query: str, partial_report_header: str) -> str:
         # make query
         results = self.make_query(query)
-        # get results published from the initial date
-        organic_results_from_initial_date = self._get_results_from_initial_date(results)
-        # get partial reports from results
-        partial_report, n_results = self._get_partial_reports_from_results(organic_results_from_initial_date)
-        # update output
-        output_report = f"<h1>{partial_report_header} [Google Scholar]" \
-                        f"({n_results}) " \
-                        f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-        output_report += partial_report
 
-        return output_report
+        if results != {}:
+            # get results published from the initial date
+            organic_results_from_initial_date = self._get_results_from_initial_date(results)
+            # get partial reports from results
+            partial_report, n_results = self._get_partial_reports_from_results(organic_results_from_initial_date)
+            # update output
+            output_report = f"<h1>{partial_report_header} [Google Scholar]" \
+                            f"({n_results}) " \
+                            f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+            output_report += partial_report
+
+            return output_report
+        else:
+            output_report = f"<h1>{partial_report_header} [Google Scholar]" \
+                            f"(0) " \
+                            f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
+            return output_report
 
     def search_for_keywords(self, output_html_str: str) -> str:
         # get query for keyword
