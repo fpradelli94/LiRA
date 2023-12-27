@@ -3,7 +3,7 @@ import logging
 import argparse
 import webbrowser
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from datetime import datetime, timedelta
 import requests
 from pymed import PubMed
@@ -23,6 +23,7 @@ OUT_FOLDER = Path("out")
 OUT_HTML = OUT_FOLDER / Path("lira_output.html")
 DEFAULT_PYMED_MAX_RESULTS = 500
 DATE_FORMAT = "%Y/%m/%d"
+OUT_JSON = OUT_FOLDER / Path("lira_output.json")
 
 
 def parse_cli_args() -> argparse.Namespace:
@@ -40,10 +41,14 @@ def parse_cli_args() -> argparse.Namespace:
     # insert day from which the research start
     group.add_argument("--from-date", "-d",
                        type=str,
-                       help="Date from which the Literature Review should start, in format AAAA/MM/DD")
+                       help="Date from which the Literature Review should start, "
+                            "in format AAAA/MM/DD"
+    )
     group.add_argument("--for-weeks", "-w",
                        type=int,
-                       help="Number of weeks for the literature review. LiRA will search for the n past weeks")
+                       help="Number of weeks for the literature review. "
+                            "LiRA will search for the n past weeks"
+    )
 
     # add see last output
     group.add_argument("--last", "-L",
@@ -53,7 +58,8 @@ def parse_cli_args() -> argparse.Namespace:
     # get option for configuration file
     parser.add_argument("--config", "-c",
                         type=str,
-                        help="Define a configuration file to use instead of the default config.json.")
+                        help="Define a configuration file to use instead of the "
+                             "default config.json.")
 
     # add option for silence
     parser.add_argument("--quiet", "-q",
@@ -71,14 +77,16 @@ def parse_cli_args() -> argparse.Namespace:
     # add methods to suppress output
     parser.add_argument("--suppress-general", "-sg",
                         action='store_true',
-                        help='Do not add to the output the Pubmed results obtained with the keywords')
+                        help='Do not add to the output the Pubmed results obtained with '
+                             'the keywords')
 
     # add '--max_results_for_query' to update the maximum number of results
     parser.add_argument("--max-results-for-query",
                         type=int,
-                        help=f"Change the maximum number of results for each executed query. Default is "
-                             f"{DEFAULT_PYMED_MAX_RESULTS}.\n"
-                             f"Notice: the higher this value is, the higher will be the time to perform the search.")
+                        help=f"Change the maximum number of results for each executed query. "
+                             f"Default is {DEFAULT_PYMED_MAX_RESULTS}.\n"
+                             f"Notice: the higher this value is, the higher will be the time to "
+                             f"perform the search.")
     return parser.parse_args()
 
 
@@ -100,18 +108,6 @@ def read_config(args: argparse.Namespace) -> Dict:
         config = json.load(infile)
 
     return config
-
-
-def get_days_ago_for_gs_organic_result(organic_result: Dict):
-    """
-    Given a Google Scholar organic result, return how many days ago it was published.
-
-    :param organic_result: Google Scholar organic result as provided by SerpAPI
-    :return:
-    """
-    snippet = organic_result["snippet"]
-    days_ago = int(snippet.split(" days ago ")[0])
-    return days_ago
 
 
 class EnginePipeline:
@@ -141,6 +137,27 @@ class EnginePipeline:
         self.authors = self.config["authors"]
         self.highlight_authors = self.config["highlight_authors"] + self.authors
 
+    def article_dict(self,
+                     authors: List[str],
+                     title: str,
+                     link: str,
+                     abstract: str,
+                     doi: str,
+                     journal: str,
+                     date: str) -> Dict:
+
+        article_dict ={
+                "authors": authors,
+                "title": title,
+                "link": link,
+                "abstract": abstract,
+                "doi": doi,
+                "journal": journal,
+                "date": date
+            }
+        
+        return article_dict
+
 
 class PubMedPipeline(EnginePipeline):
     """
@@ -149,19 +166,14 @@ class PubMedPipeline(EnginePipeline):
     def __init__(self, cli_args: argparse.Namespace):
         super().__init__(cli_args)
 
+        # set name
+        self.name = "pubmed"
+
         # load email
         self.email = self.config["email"]
 
         # init pymed
         self.pubmed = PubMed(tool="LiRA", email=self.email)
-
-    def _get_authors_to_highlight_from_list(self, list_of_authors: List):
-        authors_to_highlight = list(filter(
-            lambda a: any([(str(a['lastname']) in ha) and (str(a['firstname']) in ha)
-                           for ha in self.highlight_authors]),
-            list_of_authors
-        ))
-        return authors_to_highlight
 
     def _add_keywords_to_query(self, query: str):
         keywords_query = " OR ".join([f"({keyword})" for keyword in self.keywords])
@@ -170,73 +182,60 @@ class PubMedPipeline(EnginePipeline):
 
     def make_query(self, query: str):
         logger.info(f"Running PubMed query (max res: {self.max_results_for_query}): {query}")
+
         results = self.pubmed.query(query, max_results=self.max_results_for_query)
 
         return results
+    
+    def _get_output_list_from_results(self, results):
+        # init output list
+        output_list = []
 
-    def _get_partial_report_from_results(self, results):
-        partial_report = ""  # init partial report
-        n_results = 0  # init n_results
-
+        # generate list of results
         for article in results:
-            n_results += 1  # update n_results
-
-            # generate 'authors string', i.e. a string containing the first author of the paper and any other
-            # author in the list self.highlight authors
-            article_authors = article.authors  # get authors
-            if len(article_authors) > 0:
-                first_author = article_authors[0]  # get first name
-                authors_string = f"{first_author['lastname']}, {first_author['firstname']}, "  # add to authors string
-
-                # highlight authors
-                authors_to_highlight = self._get_authors_to_highlight_from_list(article_authors)
-
-                # if any, add them to the string in red
-                if authors_to_highlight:
-                    authors_to_highlight_string = ", ...".join(
-                        [f'<span style="color: #ff0000">{ia["lastname"]}, {ia["firstname"]}</span> ' for ia in
-                         authors_to_highlight])
-                    authors_string += authors_to_highlight_string
-
-                # finish author sting
-                authors_string += f"et al. ({article.publication_date.strftime('%d/%m/%Y')})"
+            # get authors
+            if len(article.authors) > 0:
+                authors_list = [f"{a['lastname']}, {a['firstname']}" for a in article.authors]
             else:
-                authors_string = f"None {article.publication_date.strftime('%d/%m/%Y')}"
+                authors_list = [None]
+            # get article_id
+            article_id = str(article.pubmed_id).split("\n")[0]
+            # generate dict
+            article_dict = self.article_dict(
+                authors=authors_list,
+                title=article.title,
+                link=f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>',
+                abstract=article.abstract,
+                doi=article.doi,
+                journal=article.journal,
+                date=article.publication_date.strftime(DATE_FORMAT)
+            )
+            # append to output list
+            output_list.append(article_dict)
 
-            # add publication info to partial report
-            # 1. paper title
-            partial_report += f'<p class="lorem" style="font-size: larger;"><strong>{article.title}</strong></p>\n'
-            # 2. authors string
-            partial_report += f'<p class="lorem">{authors_string}</em><br>\n'
-            # 3. pubmed link
-            article_id = str(article.pubmed_id).split("\n")[0]  # get pubmed id
-            partial_report += f'<a href="https://pubmed.ncbi.nlm.nih.gov/{article_id}/">' \
-                              f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>\n'
-            # 4. abstract
-            partial_report += f'{article.abstract}</p>\n'
-            partial_report += '<hr class="lorem">\n'
-
-        return partial_report, n_results
-
-    def search_for_keywords(self, output_html_str: str):
+        # check number of results
+        n_results = len(output_list)
+        if n_results >= self.max_results_for_query:
+            logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
+                           f"Consider changing the max results for query using the flag "
+                           f"'--max_results_for_query'.")
+        logger.info(f"Found {n_results} results")
+            
+        return output_list
+    
+    def search_for_keywords(self):
         # init query with date
         query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
         # add keywords to the query
         query = self._add_keywords_to_query(query)
         # make query
         results = self.make_query(query)
-        # get partial report from results
-        partial_report, n_results = self._get_partial_report_from_results(results)
+        return self._get_output_list_from_results(results)
+    
+    def search_for_journals(self):
+        # init output list
+        output_list = []
 
-        # update output
-        output_html_str += f"<h1>General results [PubMed]" \
-                           f"({n_results}) " \
-                           f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-        output_html_str += partial_report
-
-        return output_html_str
-
-    def search_for_journal(self, output_html_str: str):
         # check number of journals
         if len(self.journals) == 0:
             logger.info("No Journals found")
@@ -246,15 +245,6 @@ class PubMedPipeline(EnginePipeline):
                 # init query with date and journal
                 query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
 
-                # get total of journal papers
-                results = self.make_query(query)
-                n_tot_results = sum(1 for _ in results)
-                if n_tot_results == self.max_results_for_query:
-                    logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
-                                   f"Consider changing the max results for query using the flag "
-                                   f"'--max_results_for_query'.")
-                logger.info(f"Found total papers published on {journal}: {n_tot_results}")
-
                 # if necessary, add keywords to the query
                 if self.cli_args.filter_journals:
                     query = self._add_keywords_to_query(query)
@@ -262,40 +252,24 @@ class PubMedPipeline(EnginePipeline):
                 # run query for journal
                 results = self.make_query(query)
 
-                # get partial report form results
-                partial_report, n_results = self._get_partial_report_from_results(results)
+                # get output list
+                output_list.extend(self._get_output_list_from_results(results))
+        
+        return output_list
 
-                # format n_results_str according to CLI
-                if self.cli_args.filter_journals:
-                    n_results_str = f"({n_results}/{n_tot_results})"
-                else:
-                    n_results_str = f"({n_results})"
+    def search_for_authors(self):
+        # init output list
+        output_list = []
 
-                # save result to html
-                output_html_str += f"<h1>Results from {journal} " \
-                                   f"{n_results_str} " \
-                                   f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-                output_html_str += partial_report
-
-        return output_html_str
-
-    def search_for_authors(self, output_html_str: str):
         # check number of authors
         if len(self.authors) == 0:
             logger.info("No authors found.")
+            return output_list
         else:
             # init authors query
             query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
             all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in self.authors])
             query = f"{query} AND ({all_authors})"
-
-            # get tot results from authors
-            results = self.make_query(query)
-            n_tot_results = sum(1 for _ in results)
-            if n_tot_results == self.max_results_for_query:
-                logger.warning(f"Number of paper published might exceed {self.max_results_for_query}. "
-                               f"Consider changing the max results for query using the flag '--max_results_for_query'.")
-            logger.info(f"Found total papers published for authors: {n_tot_results}")
 
             # if necessary, filter authors
             if self.cli_args.filter_authors:
@@ -304,23 +278,10 @@ class PubMedPipeline(EnginePipeline):
             # make query
             results = self.make_query(query)
 
-            # get partial report from results
-            partial_report, n_results = self._get_partial_report_from_results(results)
+            # append results to output list
+            output_list.extend(self._get_output_list_from_results(results))
 
-            # adjust n_results_str according to user input
-            if self.cli_args.filter_journals:
-                n_results_str = f"({n_results}/{n_tot_results})"
-            else:
-                n_results_str = f"({n_results})"
-
-            # update output
-            output_html_str += f"<h1>Results from Authors " \
-                               f"{n_results_str} " \
-                               f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-            output_html_str += partial_report
-
-        return output_html_str
-
+        return output_list
 
 class GoogleScholarPipeline(EnginePipeline):
     """
@@ -328,6 +289,8 @@ class GoogleScholarPipeline(EnginePipeline):
     """
     def __init__(self, cli_args: argparse.Namespace):
         super().__init__(cli_args)
+        # set name
+        self.name = "google_scholar"
 
         # get time delta between now and initial date
         time_range: timedelta = datetime.now() - datetime.strptime(self.initial_date, DATE_FORMAT)
@@ -345,6 +308,17 @@ class GoogleScholarPipeline(EnginePipeline):
             "scisbd": 1,  # get results from most recent
             "num": self.max_results_for_query
         }
+
+    def _get_days_ago_for_gs_organic_result(self, organic_result: Dict):
+        """
+        Given a Google Scholar organic result, return how many days ago it was published.
+
+        :param organic_result: Google Scholar organic result as provided by SerpAPI
+        :return:
+        """
+        snippet = organic_result["snippet"]
+        days_ago = int(snippet.split(" days ago ")[0])
+        return days_ago
 
     def _add_keywords_to_query(self, query: str):
         keyword_query = "|".join([f"{keyword}" for keyword in self.keywords])  # build OR chained string
@@ -397,7 +371,7 @@ class GoogleScholarPipeline(EnginePipeline):
         organic_results = results["organic_results"]  # get organic results
 
         # get how many days ago the last paper on page was published
-        last_result_days_ago = get_days_ago_for_gs_organic_result(organic_results[-1])
+        last_result_days_ago = self._get_days_ago_for_gs_organic_result(organic_results[-1])
 
         # if latest paper on page was published earlier than self.timedelta_days, go to next page;
         # else, get only the elements published earlier than self.timedelta_days days
@@ -409,98 +383,74 @@ class GoogleScholarPipeline(EnginePipeline):
             return [*organic_results, *new_organic_results]
         else:
             output_list = [ores for ores in organic_results
-                           if get_days_ago_for_gs_organic_result(ores) < self.timedelta_days]
+                           if self._get_days_ago_for_gs_organic_result(ores) < self.timedelta_days]
             return output_list
+  
+    def _get_output_list_from_query(self, query):
+        # init output list
+        output_list = []
 
-    def _get_partial_reports_from_results(self, organic_results: List) -> Tuple[str, int]:
-        partial_report = ""  # init partial report
-        n_results = 0  # init n_results
-
-        for element in organic_results:
-            n_results += 1  # update n_results
-
-            # generate 'authors string', i.e. a string containing the first author of the paper and any other
-            # author in the list self.highlight authors
-            if "authors" in element["publication_info"]:
-                article_authors = element["publication_info"]["authors"]  # get authors
-                if len(article_authors) > 0:
-                    first_author = article_authors[0]
-                    first_author_name = first_author["name"]
-                    first_author_link = first_author["link"]
-                    authors_string = f'<a href="{first_author_link}">{first_author_name}</a> '
-                else:
-                    authors_string = f"None "
-            else:
-                authors_string = f"None "
-
-            # finish author sting
-            publication_date = datetime.now() - timedelta(days=get_days_ago_for_gs_organic_result(element))
-            authors_string += f"et al. ({publication_date.strftime('%d/%m/%Y')})"
-
-            # add publication info to partial report
-            # 1. paper title
-            paper_title = element["title"]
-            partial_report += f'<p class="lorem" style="font-size: larger;"><strong>{paper_title}</strong></p>\n'
-            # 2. authors string
-            partial_report += f'<p class="lorem">{authors_string}</em><br>\n'
-            # 3. Google Scholar Link
-            paper_link = element["link"]
-            partial_report += f'<a href="{paper_link}">{paper_link}</a><br>\n'
-            # 4. snippet
-            partial_report += f'{element["snippet"]}</p>\n'
-            partial_report += f'<hr class="lorem">\n'
-
-        return partial_report, n_results
-
-    def _generate_partial_report_from_query(self, query: str, partial_report_header: str) -> str:
         # make query
         results = self.make_query(query)
 
         if results != {}:
             # get results published from the initial date
             organic_results_from_initial_date = self._get_results_from_initial_date(results)
-            # get partial reports from results
-            partial_report, n_results = self._get_partial_reports_from_results(organic_results_from_initial_date)
-            # update output
-            output_report = f"<h1>{partial_report_header} [Google Scholar]" \
-                            f"({n_results}) " \
-                            f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-            output_report += partial_report
+          
+            # create list of results
+            for element in organic_results_from_initial_date:
+                # get authors
+                if "authors" in element["publication_info"]:
+                    authors = [a["name"] for a in element["publication_info"]["authors"]]
+                else:
+                    authors = [None]
+                # get date
+                days_ago = timedelta(days=self._get_days_ago_for_gs_organic_result(element))
+                publication_date = datetime.now() - days_ago
+                # build dict for element
+                element_dict = self.article_dict(
+                    authors=authors,
+                    title=element["title"],
+                    link=element["link"],
+                    abstract=element["snippet"],
+                    doi=None,
+                    journal=None,
+                    date=publication_date.strftime(DATE_FORMAT)
+                )
+                # append to output list
+                output_list.append(element_dict)
 
-            return output_report
-        else:
-            output_report = f"<h1>{partial_report_header} [Google Scholar]" \
-                            f"(0) " \
-                            f"({self.initial_date} - {datetime.now().strftime('%Y/%m/%d')})</h1>\n"
-            return output_report
-
-    def search_for_keywords(self, output_html_str: str) -> str:
+        return output_list
+    
+    def search_for_keywords(self):
+        # init output list
+        output_list = []
         # get query for keyword
         query = self._add_keywords_to_query("")
-        # update output_html_report
-        output_html_str += self._generate_partial_report_from_query(query=query,
-                                                                    partial_report_header="General results")
-        return output_html_str
+        # generate output_list
+        output_list = self._get_output_list_from_query(query)
+        return output_list
 
-    def search_for_journal(self, output_html_str: str) -> str:
+    def search_for_journals(self) -> List:
         # check number of journals
         if len(self.journals) == 0:
             logger.info("No Journals found")
+            return []
         else:
             # iterate on journals
             query = "|".join([f"source:{j}" for j in self.journals])
             # if necessary, add keywords to the query
             if self.cli_args.filter_journals:
                 query = self._add_keywords_to_query(query)
-            # update output_html_str
-            output_html_str += self._generate_partial_report_from_query(query=query,
-                                                                        partial_report_header="Results from Journals")
-        return output_html_str
+            # generate output list
+            output_list = self._get_output_list_from_query(query)
+            return output_list
 
-    def search_for_authors(self, output_html_str: str) -> str:
+    def search_for_authors(self) -> List:
         # check number of journals
         if len(self.authors) == 0:
             logger.info("No Authors found")
+            return []
         else:
             # build the authors list in the format required by GS
             gs_authors_list = []
@@ -517,11 +467,69 @@ class GoogleScholarPipeline(EnginePipeline):
             # if necessary, add keywords to the query
             if self.cli_args.filter_authors:
                 query = self._add_keywords_to_query(query)
-            # update output_html_str
-            output_html_str += self._generate_partial_report_from_query(query=query,
-                                                                        partial_report_header="Results from Authors")
+            # generate output list
+            output_list = self._get_output_list_from_query(query)
+            return output_list
+       
 
-        return output_html_str
+class OutputGenerator:
+    def __init__(self, results: List, cli_args: argparse.Namespace) -> None:
+        # store results
+        self.results = results
+        # generate output folder
+        OUT_FOLDER.mkdir(exist_ok=True)
+        # get initial date
+        if cli_args.from_date is None:
+            initial_date = datetime.now() - timedelta(weeks=cli_args.for_weeks)
+            self.initial_date = initial_date.strftime(DATE_FORMAT)
+        else:
+            self.initial_date = cli_args.from_date
+
+    def to_json(self) -> None:
+        with open(OUT_JSON, "w") as outfile:
+            json.dump(self.results, outfile, indent=2)
+
+    def __paper_dict_to_html(self, paper_dict: Dict) -> str:
+        paper_html = ""  # init html
+
+        # 1. add paper title
+        paper_html += f'<p class="lorem" style="font-size: larger;"><strong>{paper_dict["title"]}</strong></p>\n'
+        # 2. add author
+        authors_string = f'{paper_dict["authors"][0]} et al. ({paper_dict["date"]})'
+        paper_html += f'<p class="lorem">{authors_string}</em><br>\n'
+        # 3. add link
+        paper_html += f'<a href="{paper_dict["link"]}"> {paper_dict["link"]}</a><br>\n'
+        # 4. add abstract
+        paper_html += f'{paper_dict["abstract"]}</p>\n'
+        paper_html += '<hr class="lorem">\n'
+
+        return paper_html
+
+    def to_html(self) -> None:
+        # init output html
+        output_html_str = ""
+        
+        # for each engine results
+        for engine_dict in self.results:
+            for section in ["general", "journals", "authors"]:
+                # generate results part for section
+                n_results = len(engine_dict['results'][section])
+                output_html_str += f"<h1>{section.capitalize()} results [{engine_dict['engine']}]" \
+                                f"({n_results}) " \
+                                f"({self.initial_date} - {datetime.now().strftime(DATE_FORMAT)})</h1>\n"
+                for paper_dict in engine_dict['results'][section]:
+                    output_html_str += self.__paper_dict_to_html(paper_dict)
+
+        # replace text in template
+        with open("in/template.html", "r") as infile:
+            template = infile.read()
+        literature_review_report = template.replace("TO_REPLACE", output_html_str)
+
+        # write report
+        with open(OUT_HTML, "w") as html_file:
+            logger.info("Saving HTML report... ")
+            html_file.write(literature_review_report)
+            logger.info("Done.") 
 
 
 def run_search(args):
@@ -539,38 +547,48 @@ def run_search(args):
         engines_list.append(PubMedPipeline(args))
         engines_list.append(GoogleScholarPipeline(args))
 
-    # init empty output_html_str
-    output_html_str = ""
+    # init list of papers
+    output_list = []
 
     for engine in engines_list:
         # Generate the 'general' part using keywords
         if not args.suppress_general:
-            output_html_str = engine.search_for_keywords(output_html_str)
+            general_list = engine.search_for_keywords()
+        else:
+            general_list = []
         # Generate the journals part
-        output_html_str = engine.search_for_journal(output_html_str)
+        journal_list = engine.search_for_journals()
         # Generate the authors part
-        output_html_str = engine.search_for_authors(output_html_str)
+        authors_list = engine.search_for_authors()
+        # generate dict for engine
+        d = {
+            "engine": engine.name,
+            "results": {
+                "general": general_list,
+                "journals": journal_list,
+                "authors": authors_list
+            }
+        }
+        # append to output list
+        output_list.append(d)
+        
 
     # check if literature review is empty
-    if output_html_str == "":
+    if len(output_list) == 0:
         logger.warning(f"LiRA output is empty.")
 
-    # replace text in template
-    with open("in/template.html", "r") as infile:
-        template = infile.read()
-    literature_review_report = template.replace("TO_REPLACE", output_html_str)
+    # get output generator
+    og = OutputGenerator(output_list, cli_args=args)
 
-    # write report
-    with open(OUT_HTML, "w") as html_file:
-        logger.info("Saving HTML report... ")
-        html_file.write(literature_review_report)
-        logger.info("Done.")
+    # generate json
+    og.to_json()
 
+    # generate html
+    og.to_html()
 
 def main():
     # generate folders
     CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
-    OUT_FOLDER.mkdir(exist_ok=True)  # generate out folder
 
     # check if config file exists
     assert DEFAULT_CONFIG_FILE.exists(), f"Configuration file not found. To work with LiRA, create a default " \
