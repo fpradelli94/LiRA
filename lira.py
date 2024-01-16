@@ -5,6 +5,7 @@ import webbrowser
 from pathlib import Path
 from typing import Dict, List
 from datetime import datetime, timedelta
+from itertools import product
 import requests
 from pymed import PubMed
 
@@ -187,7 +188,7 @@ class PubMedPipeline(EnginePipeline):
 
         return results
     
-    def _get_output_list_from_results(self, results):
+    def _get_output_list_from_results(self, results, **kwargs):
         # init output list
         output_list = []
 
@@ -200,14 +201,16 @@ class PubMedPipeline(EnginePipeline):
                 authors_list = [None]
             # get article_id
             article_id = str(article.pubmed_id).split("\n")[0]
+            # get article doi
+            article_doi = None if article.doi is None else article.doi.split('\n', maxsplit=1)[0]
             # generate dict
             article_dict = self.article_dict(
                 authors=authors_list,
                 title=article.title,
                 link=f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>',
                 abstract=article.abstract,
-                doi=article.doi,
-                journal=article.journal,
+                doi=article_doi,
+                journal=article.journal if 'journal' not in kwargs else kwargs['journal'],
                 date=article.publication_date.strftime(DATE_FORMAT)
             )
             # append to output list
@@ -253,7 +256,7 @@ class PubMedPipeline(EnginePipeline):
                 results = self.make_query(query)
 
                 # get output list
-                output_list.extend(self._get_output_list_from_results(results))
+                output_list.extend(self._get_output_list_from_results(results, journal=journal))
         
         return output_list
 
@@ -473,7 +476,7 @@ class GoogleScholarPipeline(EnginePipeline):
        
 
 class OutputGenerator:
-    def __init__(self, results: List, cli_args: argparse.Namespace) -> None:
+    def __init__(self, results: List, cli_args: argparse.Namespace, config: Dict) -> None:
         # store results
         self.results = results
         # generate output folder
@@ -484,6 +487,10 @@ class OutputGenerator:
             self.initial_date = initial_date.strftime(DATE_FORMAT)
         else:
             self.initial_date = cli_args.from_date
+        # config
+        self.journals = config["journals"]
+        self.authors = config["authors"]
+        self.highlight_authors = config["highlight_authors"] + self.authors
 
     def to_json(self) -> None:
         with open(OUT_JSON, "w") as outfile:
@@ -496,6 +503,13 @@ class OutputGenerator:
         paper_html += f'<p class="lorem" style="font-size: larger;"><strong>{paper_dict["title"]}</strong></p>\n'
         # 2. add author
         authors_string = f'{paper_dict["authors"][0]} et al. ({paper_dict["date"]})'
+        if None not in paper_dict["authors"]:
+            a_to_highlight = [a for a, ha in product(paper_dict["authors"], self.highlight_authors)
+                            if (a.split(",")[0] in ha.split(",")) and (a.split(",")[1][1] in ha)]
+            if a_to_highlight:
+                a_to_highlight_str = "; ".join(a_to_highlight)
+                a_to_highlight_str = f'\t <span style="color: #ff0000">Notice: {a_to_highlight_str} in authors</span>'
+                authors_string += a_to_highlight_str
         paper_html += f'<p class="lorem">{authors_string}</em><br>\n'
         # 3. add link
         paper_html += f'<a href="{paper_dict["link"]}"> {paper_dict["link"]}</a><br>\n'
@@ -511,7 +525,13 @@ class OutputGenerator:
         
         # for each engine results
         for engine_dict in self.results:
-            for section in ["general", "journals", "authors"]:
+            engine_name = engine_dict['engine']
+            if engine_name == "pubmed":
+                sections = ["general", "authors"]
+            else:
+                sections = ["general", "journals", "authors"]
+
+            for section in sections:
                 # generate results part for section
                 n_results = len(engine_dict['results'][section])
                 output_html_str += f"<h1>{section.capitalize()} results [{engine_dict['engine']}]" \
@@ -519,7 +539,17 @@ class OutputGenerator:
                                 f"({self.initial_date} - {datetime.now().strftime(DATE_FORMAT)})</h1>\n"
                 for paper_dict in engine_dict['results'][section]:
                     output_html_str += self.__paper_dict_to_html(paper_dict)
-
+            
+            if (engine_name == "pubmed"):
+                for j in self.journals:
+                    results_for_j = [article for article in engine_dict['results']['journals'] if article['journal'] == j]
+                    n_results_for_j = len(results_for_j)
+                    output_html_str += f"<h1>{j.capitalize()} results [{engine_dict['engine']}]" \
+                                    f"({n_results_for_j}) " \
+                                    f"({self.initial_date} - {datetime.now().strftime(DATE_FORMAT)})</h1>\n"
+                    for paper_dict in results_for_j:
+                        output_html_str += self.__paper_dict_to_html(paper_dict)
+                
         # replace text in template
         with open("in/template.html", "r") as infile:
             template = infile.read()
@@ -578,7 +608,7 @@ def run_search(args):
         logger.warning(f"LiRA output is empty.")
 
     # get output generator
-    og = OutputGenerator(output_list, cli_args=args)
+    og = OutputGenerator(output_list, cli_args=args, config=config)
 
     # generate json
     og.to_json()
