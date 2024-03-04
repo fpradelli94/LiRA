@@ -1,3 +1,4 @@
+import re
 import json
 import logging
 import argparse
@@ -211,7 +212,7 @@ class PubMedPipeline(EnginePipeline):
                 abstract=article.abstract,
                 doi=article_doi,
                 journal=article.journal if 'journal' not in kwargs else kwargs['journal'],
-                date=article.publication_date.strftime(DATE_FORMAT)
+                date=article.publication_date.strftime(DATE_FORMAT) if article.publication_date is not None else None
             )
             # append to output list
             output_list.append(article_dict)
@@ -320,7 +321,7 @@ class GoogleScholarPipeline(EnginePipeline):
         :return:
         """
         snippet = organic_result["snippet"]
-        days_ago = int(snippet.split(" days ago ")[0])
+        days_ago = int(re.split(r'\s+day(s)?\s+ago+\s', snippet)[0])
         return days_ago
 
     def _add_keywords_to_query(self, query: str):
