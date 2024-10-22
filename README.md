@@ -1,11 +1,8 @@
 
 ![lira](./doc/LiRA.gif)
 
-<img src="./doc/lira_logo.png" align="right"
-     alt="LiRA logo" width="100" height="100">
+<h1><img src="./doc/lira_logo.png" align="right" alt="LiRA logo" width="200" height="200">"LiRA: Literature Review Automated"</h1>
 
-# LiRA: **Li**terature **R**eview **A**utomated  
-  
 > :mortar_board: Automate your weekly scientific literature review
   
 **LiRA** is a CLI Python program based on PyMed and SerpAPI to search on PubMed and get the results programmatically in a readable HTML page.
