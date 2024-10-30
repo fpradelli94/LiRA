@@ -321,7 +321,11 @@ class GoogleScholarPipeline(EnginePipeline):
         :return:
         """
         snippet = organic_result["snippet"]
-        days_ago = int(re.split(r'\s+day(s)?\s+ago+\s', snippet)[0])
+        try:
+            days_ago = int(re.split(r'\s+day(s)?\s+ago+\s', snippet)[0])
+        except ValueError as e:
+            logger.warning(f"Error while parsing snippet: {snippet}, setting days ago to 0")
+            days_ago = 0
         return days_ago
 
     def _add_keywords_to_query(self, query: str):
@@ -411,12 +415,30 @@ class GoogleScholarPipeline(EnginePipeline):
                 # get date
                 days_ago = timedelta(days=self._get_days_ago_for_gs_organic_result(element))
                 publication_date = datetime.now() - days_ago
+                # get title
+                try:
+                    article_title = element["title"]
+                except KeyError as e:
+                    logger.warning(f"Error while parsing title for element: {element}, setting title to 'No title found'")
+                    article_title = "No title found"
+                # get link
+                try:
+                    article_link = element["link"]
+                except KeyError as e:
+                    logger.warning(f"Error while parsing link for element: {element}, setting link to 'None'")
+                    article_link = None
+                # get snippet
+                try:
+                    article_snippet = element["snippet"]
+                except KeyError as e:
+                    logger.warning(f"Error while parsing snippet for element: {element}, setting snippet to 'No snippet found'")
+                    article_snippet = "No snippet found"
                 # build dict for element
                 element_dict = self.article_dict(
                     authors=authors,
-                    title=element["title"],
-                    link=element["link"],
-                    abstract=element["snippet"],
+                    title=article_title,
+                    link=article_link,
+                    abstract=article_snippet,
                     doi=None,
                     journal=None,
                     date=publication_date.strftime(DATE_FORMAT)
