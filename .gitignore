@@ -5,3 +5,4 @@ config/
 Pipfile
 Pipfile.lock
 .vscode
+.python-version

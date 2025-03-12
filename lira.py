@@ -1,4 +1,5 @@
 import re
+import sys
 import json
 import logging
 import argparse
@@ -643,12 +644,12 @@ def main():
     # generate folders
     CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
 
+    # parse CLI arguments
+    args = parse_cli_args()
+
     # check if config file exists
     assert DEFAULT_CONFIG_FILE.exists(), f"Configuration file not found. To work with LiRA, create a default " \
                                          f"configuration file config/config.json."
-
-    # parse CLI arguments
-    args = parse_cli_args()
 
     # manage log
     log_level = logging.WARNING if args.quiet else logging.INFO
@@ -661,7 +662,11 @@ def main():
         run_search(args)
 
     # open result in browser
-    webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
+    if sys.platform == 'darwin':   # MacOS requires the file to be formatted as URI
+        file_uri = OUT_HTML.resolve().as_uri()
+        webbrowser.open_new_tab(file_uri)
+    else:
+        webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
 
 
 if __name__ == "__main__":

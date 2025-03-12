@@ -23,6 +23,13 @@ All you need is on this README!
 - [Contributing](https://github.com/fpradelli94/LiRA#contributing)
   
 ## Install [Linux]
+
+*Notice*: I provided instructions to install and use LiRA with `pipenv`, but you can use any virtual environment 
+manager such as Conda or Venv.
+
+### Linux
+> :warning: LiRA currently requires Pyhon 3.8 to run. If you don't have it in your system, consider using [Pyenv](https://github.com/pyenv/pyenv) for the installation.
+
 If you don't have it, install [Pipenv](https://pipenv.pypa.io/en/latest/):
 ```shell
 pip install pipenv --user
@@ -37,9 +44,31 @@ cd LiRA
 pipenv install -r requirements.txt
 ```
 
-*Notice*: I provided instructions to install and use LiRA with `pipenv`, but you can use any virtual environment 
-manager such as Conda or Venv.
+### MacOS
+> :warning: LiRA currently requires Pyhon 3.8 to run. If you don't have it in your system, consider using [Pyenv](https://github.com/pyenv/pyenv) for the installation.
 
+Make sure you have `pipenv` installed (else, install it with `brew install pipenv`):
+```shell
+> pipenv --version
+pipenv, version 2024.4.1. # you should get something like this
+```
+Clone this repository using `git`:
+```shell
+git clone https://github.com/fpradelli94/LiRA.git
+```
+Go into the cloned folder:
+```shell
+cd LiRA
+```
+Use `pyenv` to ensure you locally have Python 3.8
+'''
+pyenv install 3.8 
+pyenv local 3.8
+'''
+Use `pipenv` to set up a virtual environment:
+```shell
+pipenv install --python 3.8 -r requirements.txt
+```
 
 ## Configuration (required)
 LiRA requires a configuration file in the `.json` format to work. You can find a template in `in/template_config`.
