@@ -61,10 +61,10 @@ Go into the cloned folder:
 cd LiRA
 ```
 Use `pyenv` to ensure you locally have Python 3.8
-'''
+```
 pyenv install 3.8 
 pyenv local 3.8
-'''
+```
 Use `pipenv` to set up a virtual environment:
 ```shell
 pipenv install --python 3.8 -r requirements.txt
