@@ -11,6 +11,7 @@ from itertools import product
 import requests
 from pymed import PubMed
 
+
 # Initialize logger
 logger = logging.getLogger(__name__)
 handler = logging.StreamHandler()

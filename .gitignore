@@ -6,3 +6,4 @@ Pipfile
 Pipfile.lock
 .vscode
 .python-version
+.DS_Store
