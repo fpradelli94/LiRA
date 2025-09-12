@@ -41,7 +41,7 @@ git clone https://github.com/fpradelli94/LiRA.git
 Install the project requirements listed in `requirements.txt`:
 ```shell
 cd LiRA
-pipenv install -r requirements.txt
+pipenv install --python 3.8 -r requirements.txt
 ```
 
 ### MacOS
@@ -131,7 +131,7 @@ but I expect a few people will find it helpful. If that's your case, leave this 
 
 ## Usage
 ### Basic usage
-Inside the folder containing the `lira.py` script, provide LiRA with the date you'd like to start searching:
+Indicate the date from which you'd like to start searching:
 ```shell
 pipenv run python3 lira.py --from-date 2023/09/19 
 # OR
