@@ -58,6 +58,14 @@ def parse_cli_args() -> argparse.Namespace:
     group.add_argument("--last", "-L",
                        action='store_true',
                        help="Just opens the last LiRA output without running a search")
+    
+    # get optional final date to stop the search
+    parser.add_argument("--to-date", "-td",
+                        type=str,
+                        help="(Optional) date to which the Literature Review should stop, "
+                             "in format AAAA/MM/DD. Default is today. WARNING: this option is only " \
+                             "implemented for PubMed searches."
+    )
 
     # get option for configuration file
     parser.add_argument("--config", "-c",
@@ -125,9 +133,16 @@ class EnginePipeline:
         else:
             self.max_results_for_query = cli_args.max_results_for_query
 
+        # get final date
+        if cli_args.to_date is None:
+            final_date = datetime.today()
+            self.final_date = final_date.strftime(DATE_FORMAT)
+        else:
+            self.final_date = cli_args.to_date
+
         # get initial date
         if cli_args.from_date is None:
-            initial_date = datetime.now() - timedelta(weeks=cli_args.for_weeks)
+            initial_date = datetime.strptime(self.final_date, DATE_FORMAT) - timedelta(weeks=cli_args.for_weeks)
             self.initial_date = initial_date.strftime(DATE_FORMAT)
         else:
             self.initial_date = cli_args.from_date
@@ -183,6 +198,13 @@ class PubMedPipeline(EnginePipeline):
         keywords_query = " OR ".join([f"({keyword})" for keyword in self.keywords])
         query += f" AND ({keywords_query})"
         return query
+    
+    def _get_time_frame_string(self):
+        if self.final_date == datetime.today().strftime(DATE_FORMAT):
+            time_frame_str = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+        else:
+            time_frame_str = f'(("{self.initial_date}"[Date - Create] : "{self.final_date}"[Date - Create]))'
+        return time_frame_str
 
     def make_query(self, query: str):
         logger.info(f"Running PubMed query (max res: {self.max_results_for_query}): {query}")
@@ -231,7 +253,8 @@ class PubMedPipeline(EnginePipeline):
     
     def search_for_keywords(self):
         # init query with date
-        query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+        #query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+        query = self._get_time_frame_string()
         # add keywords to the query
         query = self._add_keywords_to_query(query)
         # make query
@@ -249,7 +272,8 @@ class PubMedPipeline(EnginePipeline):
             # iterate on journals
             for journal in self.journals:
                 # init query with date and journal
-                query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
+                #query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create])) AND ({journal}[Journal])'
+                query = f'{self._get_time_frame_string()} AND ({journal}[Journal])'
 
                 # if necessary, add keywords to the query
                 if self.cli_args.filter_journals:
@@ -273,7 +297,8 @@ class PubMedPipeline(EnginePipeline):
             return output_list
         else:
             # init authors query
-            query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+            # query = f'(("{self.initial_date}"[Date - Create] : "3000"[Date - Create]))'
+            query = self._get_time_frame_string()
             all_authors = " OR ".join([f"({author.replace(',', '')}[Author])" for author in self.authors])
             query = f"{query} AND ({all_authors})"
 
@@ -289,6 +314,7 @@ class PubMedPipeline(EnginePipeline):
 
         return output_list
 
+
 class GoogleScholarPipeline(EnginePipeline):
     """
     Pipeline for Google Scholar. Uses SerpAPI as backend.
@@ -297,6 +323,10 @@ class GoogleScholarPipeline(EnginePipeline):
         super().__init__(cli_args)
         # set name
         self.name = "google_scholar"
+
+        # raise error if to_date is set (not implemented)
+        if cli_args.to_date is not None:
+            raise NotImplementedError("The --to-date option is not implemented for Google Scholar searches.")
 
         # get time delta between now and initial date
         time_range: timedelta = datetime.now() - datetime.strptime(self.initial_date, DATE_FORMAT)
@@ -587,7 +617,23 @@ class OutputGenerator:
             logger.info("Done.") 
 
 
-def run_search(args):
+def run_search_from_cli(args):
+    # read config
+    config = read_config(args)
+
+    # call run_search
+    run_search(config, args)
+
+
+def run_search_from_script(config: Dict, args: Dict):
+    # transform args dict to namespace
+    cli_args = argparse.Namespace(**args)
+
+    # call run_search
+    run_search(config, cli_args)
+
+
+def run_search(config, args):
     # read config
     config = read_config(args)
 
@@ -641,6 +687,7 @@ def run_search(args):
     # generate html
     og.to_html()
 
+
 def main():
     # generate folders
     CONFIG_FOLDER.mkdir(exist_ok=True)  # generate config folder
@@ -660,7 +707,7 @@ def main():
     if args.last:
         assert OUT_HTML.exists(), f"Last LiRA output not found. Should be in {OUT_HTML.resolve()}"
     else:
-        run_search(args)
+        run_search_from_cli(args)
 
     # open result in browser
     if sys.platform == 'darwin':   # MacOS requires the file to be formatted as URI

@@ -133,9 +133,9 @@ but I expect a few people will find it helpful. If that's your case, leave this 
 ### Basic usage
 Indicate the date from which you'd like to start searching:
 ```shell
-pipenv run python3 lira.py --from-date 2023/09/19 
+pipenv run python3 src/lira.py --from-date 2023/09/19 
 # OR
-pipenv run python3 lira.py -d 2023/09/19
+pipenv run python3 src/lira.py -d 2023/09/19
 ```
 If everything works smoothly, you should see logging messages appearing. It means the LiRA is searching the papers 
 from the given date to the day you are running LiRA.
@@ -157,18 +157,18 @@ By default, LiRA will provide ALL the most recent publications from
 your journals and authors of interest. If you want to get only 
 the results matching the keywords in the `config` file, just type:
 ```shell
-pipenv run python3 lira.py -d 2023/09/19 --filter-journals  # for journals 
+pipenv run python3 src/lira.py -d 2023/09/19 --filter-journals  # for journals 
 # OR
-pipenv run python3 lira.py -d 2023/09/19 --filter-authors   # for authors
+pipenv run python3 src/lira.py -d 2023/09/19 --filter-authors   # for authors
 # OR
-pipenv run python3 lira.py -d 2023/09/19 --filter-authors --filter-journals  # for both
+pipenv run python3 src/lira.py -d 2023/09/19 --filter-authors --filter-journals  # for both
 ```
 
 ### Suppressing sections
 If you are just interested in having the most recent results from the journals and the authors, you can tell LiRA to 
 not generate the 'General Results' section:
 ```shell
-pipenv run python3 lira.py -d 2023/09/19 --suppress-general
+pipenv run python3 src/lira.py -d 2023/09/19 --suppress-general
 ```
 If you are not interested in any specific author or journal, it is sufficient to keep the `authors` and `journals` 
 sections empty in the `config.json` file:
@@ -188,6 +188,13 @@ sections empty in the `config.json` file:
 }
 ```
 
+### Selecting a final date
+By default LiRA scrapes all the publications to the day at which the program is executed. To put a final date in the search, use the flag `--to_date` (or `-td`)
+```bash
+pipenv run python3 src/lira.py -d 2025/11/01 -td 2025/12/01
+```
+> Warning: Not implemented for Google Scholar (SerpAPI)
+
 ### Reading the HTML report
 For each section, the total number of results and the time range of the search is shown in the header:
 
@@ -197,22 +204,22 @@ For each section, the total number of results and the time range of the search i
 The `config.json` file contains the default configuration for LiRA. However, you can generate different configuration 
 files and use them to run other searches. Just use the `-c` argument:
 ```shell
-pipenv run lira.py -d 2023/09/19 -c another_config_file.json
+pipenv run python3 src/lira.py -d 2023/09/19 -c another_config_file.json
 ```
 
 ### Accessing the HTML report
 The output of  LIRA is stored in `out/lira_output.html`. You can open the most recent report anytime by accessing the 
 file directly or running:
 ```shell
-pipenv run python3 lira.py --last
+pipenv run python3 src/lira.py --last
 # OR
-pipenv run python3 lira.py -L
+pipenv run python3 src/lira.py -L
 ```
 
 ## Need `--help`?
 For additional details on the use of LiRA, just type:
 ```shell
-pipenv run lira.py --help
+pipenv run python3 src/lira.py --help
 ```
 To access all the possible arguments and ways to automate your literature research!
 
@@ -220,6 +227,7 @@ To access all the possible arguments and ways to automate your literature resear
   
 * 09/10/2023: First release.
 * 22/11/2023: Added experimental support to Google Scholar with SerpAPI.
+* 01/01/2026: Added `--to_date` flag and moved script in `src`
 
 ## Future developments
 
