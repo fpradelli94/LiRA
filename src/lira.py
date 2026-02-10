@@ -1,6 +1,7 @@
 import re
 import sys
 import json
+import time
 import logging
 import argparse
 import webbrowser
@@ -30,7 +31,7 @@ DATE_FORMAT = "%Y/%m/%d"
 OUT_JSON = OUT_FOLDER / Path("lira_output.json")
 
 
-def parse_cli_args() -> argparse.Namespace:
+def parse_cli_args(args: List[str] = None) -> argparse.Namespace:
     """
     Parse CLI arguments
 
@@ -99,7 +100,8 @@ def parse_cli_args() -> argparse.Namespace:
                              f"Default is {DEFAULT_PYMED_MAX_RESULTS}.\n"
                              f"Notice: the higher this value is, the higher will be the time to "
                              f"perform the search.")
-    return parser.parse_args()
+    
+    return parser.parse_args(args)
 
 
 def read_config(args: argparse.Namespace) -> Dict:
@@ -123,7 +125,7 @@ def read_config(args: argparse.Namespace) -> Dict:
 
 
 class EnginePipeline:
-    def __init__(self, cli_args: argparse.Namespace):
+    def __init__(self, cli_args: argparse.Namespace, config: Dict = None):
         # save args
         self.cli_args = cli_args
 
@@ -148,7 +150,10 @@ class EnginePipeline:
             self.initial_date = cli_args.from_date
 
         # read config
-        self.config = read_config(cli_args)
+        if config is None:
+            self.config = read_config(cli_args)
+        else:
+            self.config = config
 
         # get common propreties
         self.keywords = self.config["keywords"]
@@ -182,8 +187,8 @@ class PubMedPipeline(EnginePipeline):
     """
     Pipeline for PubMed. Uses PyMed as backend.
     """
-    def __init__(self, cli_args: argparse.Namespace):
-        super().__init__(cli_args)
+    def __init__(self, cli_args: argparse.Namespace, config: Dict = None):
+        super().__init__(cli_args, config=config)
 
         # set name
         self.name = "pubmed"
@@ -211,6 +216,9 @@ class PubMedPipeline(EnginePipeline):
 
         results = self.pubmed.query(query, max_results=self.max_results_for_query)
 
+        # throttle requests
+        time.sleep(0.34)  # to avoid being blocked by NCBI
+
         return results
     
     def _get_output_list_from_results(self, results, **kwargs):
@@ -228,6 +236,15 @@ class PubMedPipeline(EnginePipeline):
             article_id = str(article.pubmed_id).split("\n")[0]
             # get article doi
             article_doi = None if article.doi is None else article.doi.split('\n', maxsplit=1)[0]
+            # get article journal
+            if 'journal' not in kwargs:
+                article_journal = getattr(article, 'journal', None)
+            else:
+                article_journal = kwargs['journal']
+            # get article date
+            article_date = getattr(article, 'publication_date', None)
+            if article_date is not None and not isinstance(article_date, str):
+                article_date = article_date.strftime(DATE_FORMAT)
             # generate dict
             article_dict = self.article_dict(
                 authors=authors_list,
@@ -235,8 +252,8 @@ class PubMedPipeline(EnginePipeline):
                 link=f'https://pubmed.ncbi.nlm.nih.gov/{article_id}</a><br>',
                 abstract=article.abstract,
                 doi=article_doi,
-                journal=article.journal if 'journal' not in kwargs else kwargs['journal'],
-                date=article.publication_date.strftime(DATE_FORMAT) if article.publication_date is not None else None
+                journal=article_journal,
+                date=article_date
             )
             # append to output list
             output_list.append(article_dict)
@@ -319,8 +336,8 @@ class GoogleScholarPipeline(EnginePipeline):
     """
     Pipeline for Google Scholar. Uses SerpAPI as backend.
     """
-    def __init__(self, cli_args: argparse.Namespace):
-        super().__init__(cli_args)
+    def __init__(self, cli_args: argparse.Namespace, config: Dict = None):
+        super().__init__(cli_args, config=config)
         # set name
         self.name = "google_scholar"
 
@@ -531,24 +548,42 @@ class GoogleScholarPipeline(EnginePipeline):
        
 
 class OutputGenerator:
-    def __init__(self, results: List, cli_args: argparse.Namespace, config: Dict) -> None:
+    def __init__(self, 
+                 results: List, 
+                 cli_args: argparse.Namespace, 
+                 config: Dict,
+                 out_folder: Path = None) -> None:
         # store results
         self.results = results
-        # generate output folder
-        OUT_FOLDER.mkdir(exist_ok=True)
+
+        # init output folder
+        if out_folder is not None:
+            self.out_folder = out_folder
+        else:
+            self.out_folder = OUT_FOLDER
+        self.out_folder.mkdir(exist_ok=True, parents=True)
+
+        # get output files
+        self.out_html = self.out_folder / OUT_HTML.name
+        self.out_json = self.out_folder / OUT_JSON.name
+
         # get initial date
         if cli_args.from_date is None:
             initial_date = datetime.now() - timedelta(weeks=cli_args.for_weeks)
             self.initial_date = initial_date.strftime(DATE_FORMAT)
         else:
             self.initial_date = cli_args.from_date
+
         # config
         self.journals = config["journals"]
         self.authors = config["authors"]
         self.highlight_authors = config["highlight_authors"] + self.authors
 
-    def to_json(self) -> None:
-        with open(OUT_JSON, "w") as outfile:
+    def to_json(self, out_file = None) -> None:
+        if out_file is None:
+            out_file = self.out_json
+        logger.info(f"Saving JSON output to {out_file}... ")
+        with open(out_file, "w") as outfile:
             json.dump(self.results, outfile, indent=2)
 
     def __paper_dict_to_html(self, paper_dict: Dict) -> str:
@@ -611,10 +646,18 @@ class OutputGenerator:
         literature_review_report = template.replace("TO_REPLACE", output_html_str)
 
         # write report
-        with open(OUT_HTML, "w") as html_file:
+        with open(self.out_html, "w") as html_file:
             logger.info("Saving HTML report... ")
             html_file.write(literature_review_report)
             logger.info("Done.") 
+
+
+def show_html_in_browser(html_file: Path):
+    if sys.platform == 'darwin':   # MacOS requires the file to be formatted as URI
+        file_uri = html_file.resolve().as_uri()
+        webbrowser.open_new_tab(file_uri)
+    else:
+        webbrowser.open(url=str(html_file.resolve()), new=0)
 
 
 def run_search_from_cli(args):
@@ -622,31 +665,49 @@ def run_search_from_cli(args):
     config = read_config(args)
 
     # call run_search
-    run_search(config, args)
+    output_list = run_search(config, args)
+
+    # get output generator
+    og = OutputGenerator(output_list, cli_args=args, config=config)
+
+    # generate json
+    og.to_json()
+
+    # generate html
+    og.to_html()
 
 
-def run_search_from_script(config: Dict, args: Dict):
+def run_search_from_script(config: Dict, 
+                           args: List[str], 
+                           out_json: Path = None) -> List[Dict]:
     # transform args dict to namespace
-    cli_args = argparse.Namespace(**args)
+    cli_args = parse_cli_args(args=args)
+
+    # manage log
+    log_level = logging.WARNING if cli_args.quiet else logging.INFO
+    logger.setLevel(log_level)
 
     # call run_search
-    run_search(config, cli_args)
+    output_list = run_search(config, cli_args)
 
+    # get output generator
+    og = OutputGenerator(output_list, cli_args=cli_args, config=config, out_folder=out_json.parent if out_json is not None else None)
 
-def run_search(config, args):
-    # read config
-    config = read_config(args)
+    # generate json
+    og.to_json(out_file=out_json)
+        
 
+def run_search(config, args) -> List[Dict]:
     # init engines
     engines_list: List[EnginePipeline] = []
     if "engine" in config.keys():
         if "pubmed" in config["engine"]:
-            engines_list.append(PubMedPipeline(args))
+            engines_list.append(PubMedPipeline(args, config=config))
         if "google-scholar" in config["engine"]:
-            engines_list.append(GoogleScholarPipeline(args))
+            engines_list.append(GoogleScholarPipeline(args, config=config))
     else:
-        engines_list.append(PubMedPipeline(args))
-        engines_list.append(GoogleScholarPipeline(args))
+        engines_list.append(PubMedPipeline(args, config=config))
+        engines_list.append(GoogleScholarPipeline(args, config=config))
 
     # init list of papers
     output_list = []
@@ -678,14 +739,8 @@ def run_search(config, args):
     if len(output_list) == 0:
         logger.warning(f"LiRA output is empty.")
 
-    # get output generator
-    og = OutputGenerator(output_list, cli_args=args, config=config)
-
-    # generate json
-    og.to_json()
-
-    # generate html
-    og.to_html()
+    # return output list
+    return output_list
 
 
 def main():
@@ -710,11 +765,7 @@ def main():
         run_search_from_cli(args)
 
     # open result in browser
-    if sys.platform == 'darwin':   # MacOS requires the file to be formatted as URI
-        file_uri = OUT_HTML.resolve().as_uri()
-        webbrowser.open_new_tab(file_uri)
-    else:
-        webbrowser.open(url=str(OUT_HTML.resolve()), new=0)
+    show_html_in_browser(OUT_HTML)
 
 
 if __name__ == "__main__":

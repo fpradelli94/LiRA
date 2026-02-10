@@ -7,3 +7,6 @@ Pipfile.lock
 .vscode
 .python-version
 .DS_Store
+knowledge_base/
+misc/
+scripts/
