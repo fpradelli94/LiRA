@@ -152,6 +152,14 @@ given date
 
 Moreover, each engine will have its own section. For instance, if you choose to scrape from Google Scholar and Pubmed, you might end up with two "General parts", one for Google Scholar and one for Pubmed.
 
+### Searching for weeks
+You can also indicate the number of weeks to scrape. For instance, to get the papers from the last 2 weeks, instead of indicating the initial date you can type:
+```shell
+pipenv run python3 src/lira.py --for-weeks 2
+# OR
+pipenv run python3 src/lira.py -w 2
+```
+
 ### Using keywords to filter Journals and Authors papers
 By default, LiRA will provide ALL the most recent publications from 
 your journals and authors of interest. If you want to get only 
