@@ -677,11 +677,15 @@ def run_search_from_cli(args):
     og.to_html()
 
 
-def run_search_from_script(config: Dict, 
-                           args: List[str], 
+def run_search_from_script(args: List[str],
+                           config: Dict = None, 
                            out_json: Path = None) -> List[Dict]:
     # transform args dict to namespace
     cli_args = parse_cli_args(args=args)
+
+    # get config
+    if config is None:
+        config = read_config(cli_args)
 
     # manage log
     log_level = logging.WARNING if cli_args.quiet else logging.INFO
@@ -691,10 +695,14 @@ def run_search_from_script(config: Dict,
     output_list = run_search(config, cli_args)
 
     # get output generator
-    og = OutputGenerator(output_list, cli_args=cli_args, config=config, out_folder=out_json.parent if out_json is not None else None)
+    if out_json is not None:
+        og = OutputGenerator(output_list, cli_args=cli_args, config=config, out_folder=out_json.parent)
 
-    # generate json
-    og.to_json(out_file=out_json)
+        # generate json
+        og.to_json(out_file=out_json)
+
+    # return output list
+    return output_list
         
 
 def run_search(config, args) -> List[Dict]:
