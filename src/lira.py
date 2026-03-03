@@ -603,6 +603,11 @@ class OutputGenerator:
         paper_html += f'<p class="lorem">{authors_string}</em><br>\n'
         # 3. add link
         paper_html += f'<a href="{paper_dict["link"]}"> {paper_dict["link"]}</a><br>\n'
+        # 3. If available, add score and motivation
+        if "interest_score" in paper_dict.keys():
+            paper_html += f'Score: {paper_dict["interest_score"]}<br>\n'
+        if "motivation" in paper_dict.keys():
+            paper_html += f'Score motivation: {paper_dict["motivation"]}<br>\n'
         # 4. add abstract
         paper_html += f'{paper_dict["abstract"]}</p>\n'
         paper_html += '<hr class="lorem">\n'
