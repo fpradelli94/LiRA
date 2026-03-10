@@ -81,13 +81,18 @@ cp in/template_config.json config/config.json
 
 This will generate an empty configuration file for LiRA. 
 
-Start filling the `config.json` file with your email (necessary to do programatic searches on PubMed) and SerpAPI key (necessary to search on Google Scholar):
+Start filling the `config.json` file with information necessary to use the APIs.
+- Pubmed: enter your email (no API key necessary for now)
+- Google Scholar: enter your SerpAPI key
+- OpenAlex: enter your OpenAlex key (get one [here](https://developers.openalex.org/))
+
 > SerpAPI is a third-party API to scrape Google Scholar. You can get your key for free [here](https://serpapi.com/)
 ```json
 {
-	"engines": ["pubmed", "google_scholar"],
+	"engines": ["pubmed", "google_scholar", "openalex"],
 	"email": "PLACE YOUR EMAIL HERE",
 	"serpapi_key": "PLACE YOUR SEPAPI KEY HERE",
+    "openalex_key": "PLACE YOUR OPENALEX KEY HERE",
 	"keywords": [],
 	"authors": [],
 	"journals": [],
@@ -99,9 +104,10 @@ Then, you can add your keywords, authors, and journals of interest in the config
 meaningful configuration file might look like this:
 ```json
 {
-   "engines": ["pubmed", "google_scholar"],
+   "engines": ["pubmed", "google_scholar", "openalex"],
    "email": "example@gmail.com",
-   "serpapi_key": "aobosandi392309qwjadosnasioiq"
+   "serpapi_key": "aobosandi392309qwjadosnasioiq",
+   "openalex_key": "neiocnsdijnca",
    "keywords": [
             "Breast Cancer",
             "Omics",
@@ -182,9 +188,10 @@ If you are not interested in any specific author or journal, it is sufficient to
 sections empty in the `config.json` file:
 ```json
 {
-   "engines": ["pubmed", "google_scholar"],
+   "engines": ["pubmed", "google_scholar", "openalex"],
    "email": "example@gmail.com",
    "serpapi_key": "aobosandi392309qwjadosnasioiq",
+   "openalex_key": "neiocnsdijnca"
    "keywords": [
             "Breast Cancer",
             "Omics",
@@ -236,6 +243,7 @@ To access all the possible arguments and ways to automate your literature resear
 * 09/10/2023: First release.
 * 22/11/2023: Added experimental support to Google Scholar with SerpAPI.
 * 01/01/2026: Added `--to_date` flag and moved script in `src`
+* 10/03/2026: Added experimental support to OpenAlex
 
 ## Future developments
 

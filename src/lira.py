@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from itertools import product
 import requests
 from pymed import PubMed
+import pyalex
 
 
 # Initialize logger
@@ -547,6 +548,204 @@ class GoogleScholarPipeline(EnginePipeline):
             return output_list
        
 
+class OpenAlexPipeline(EnginePipeline):
+    """
+    Pipeline for OpenAlex. Uses OpenAlex API as backend.
+    """
+    def __init__(self, cli_args: argparse.Namespace, config: Dict = None):
+        super().__init__(cli_args, config=config)
+        # set name
+        self.name = "openalex"
+
+        # get openalex key
+        self.openalex_key = self.config["openalex_key"]
+
+        # format initial and final date for OpenAlex API
+        self.openalex_initial_date = self.initial_date.replace("/", "-")
+        self.openalex_final_date = self.final_date.replace("/", "-")
+
+        # configure pyalex
+        pyalex.config.api_key = self.openalex_key
+
+    def _compose_query(self):
+        keywords_query = " OR ".join([f"({keyword})" for keyword in self.keywords])
+        return keywords_query
+
+    def _get_output_list_from_results(self, results, **kwargs):
+        # init output list
+        output_list = []
+
+        def _format_author_name(author_name: str):
+            if author_name is None:
+                return None
+            if "," in author_name:
+                return author_name
+            name_parts = author_name.split()
+            if len(name_parts) < 2:
+                return author_name
+            family_name = name_parts[-1]
+            given_names = " ".join(name_parts[:-1])
+            return f"{family_name}, {given_names}"
+
+        def _get_abstract_from_inverted_index(article: Dict):
+            inverted_index = article.get("abstract_inverted_index")
+            if not inverted_index:
+                return None
+
+            max_position = max(max(positions) for positions in inverted_index.values())
+            abstract_tokens = [""] * (max_position + 1)
+            for token, positions in inverted_index.items():
+                for position in positions:
+                    abstract_tokens[position] = token
+            return " ".join(token for token in abstract_tokens if token)
+
+        for article in results:
+            # get authors
+            authorships = article.get("authorships", [])
+            if len(authorships) > 0:
+                authors_list = [
+                    _format_author_name(authorship.get("author", {}).get("display_name"))
+                    for authorship in authorships
+                    if authorship.get("author", {}).get("display_name") is not None
+                ]
+                if len(authors_list) == 0:
+                    authors_list = [None]
+            else:
+                authors_list = [None]
+
+            # get article journal
+            if "journal" in kwargs:
+                article_journal = kwargs["journal"]
+            else:
+                article_journal = (
+                    article.get("primary_location", {})
+                    .get("source", {})
+                    .get("display_name")
+                )
+
+            # get article date
+            article_date = article.get("publication_date")
+            if article_date is not None:
+                article_date = article_date.replace("-", "/")
+
+            # get article DOI and link
+            article_doi = article.get("doi")
+            article_link = (
+                article.get("primary_location", {}).get("landing_page_url")
+                or article.get("primary_location", {}).get("pdf_url")
+                or article_doi
+                or article.get("id")
+            )
+
+            # build article dict
+            article_dict = self.article_dict(
+                authors=authors_list,
+                title=article.get("title"),
+                link=article_link,
+                abstract=_get_abstract_from_inverted_index(article),
+                doi=article_doi,
+                journal=article_journal,
+                date=article_date
+            )
+
+            # append to output list
+            output_list.append(article_dict)
+
+        logger.info(f"Found {len(output_list)} results")
+        return output_list
+    
+    def search_for_keywords(self):
+        # add keywords to the query
+        query = self._compose_query()
+        # make query
+        results = (
+            pyalex.Works()
+            .filter(
+                from_publication_date=self.openalex_initial_date,
+                to_publication_date=self.openalex_final_date,
+                title_and_abstract={"search": query}
+            )
+            .get()
+        )
+        return self._get_output_list_from_results(results)
+    
+    def search_for_journals(self):
+        # init output list
+        output_list = []
+
+        # check number of journals
+        if len(self.journals) == 0:
+            logger.info("No Journals found")
+        else:
+            # iterate on journals
+            for journal in self.journals:
+                # get source ID
+                journal = pyalex.Sources().search_filter(display_name="Nature").get()[0]
+                source_id = journal["id"].split("/")[-1]
+
+                # init filter params
+                filter_params = {
+                    "from_publication_date": self.openalex_initial_date,
+                    "to_publication_date": self.openalex_final_date,
+                    "primary_location": {"source": {"id": source_id}}
+                }
+
+
+                # if necessary, add keywords to the query
+                if self.cli_args.filter_journals:
+                    query = self._compose_query()
+                    filter_params["title_and_abstract"] = {"search": query}
+
+
+                # make query
+                results = (
+                    pyalex.Works()
+                    .filter(**filter_params)
+                    .get()
+                )
+
+                # get output list
+                output_list.extend(self._get_output_list_from_results(results, journal=journal))
+        
+        return output_list
+    
+    def search_for_authors(self):
+        # init output list
+        output_list = []
+
+        # check number of authors
+        if len(self.authors) == 0:
+            logger.info("No authors found.")
+            return output_list
+        else:
+            # resolve author ids
+            author = pyalex.Authors().search("Geoffrey Hinton").get()[0]
+            author_id = author["id"].split("/")[-1]   
+
+            # init filter params
+            filter_params = {
+                "from_publication_date": self.openalex_initial_date,
+                "to_publication_date": self.openalex_final_date,
+                "author": {"id": author_id}
+            }
+
+            # if necessary, filter authors
+            if self.cli_args.filter_authors:
+                query = self._compose_query()
+                filter_params["title_and_abstract"] = {"search": query}
+
+            # make query
+            results = (
+                    pyalex.Works()
+                    .filter(**filter_params)
+                    .get()
+                )
+
+            # append results to output list
+            output_list.extend(self._get_output_list_from_results(results))
+
+        return output_list
+
 class OutputGenerator:
     def __init__(self, 
                  results: List, 
@@ -718,9 +917,12 @@ def run_search(config, args) -> List[Dict]:
             engines_list.append(PubMedPipeline(args, config=config))
         if "google-scholar" in config["engine"]:
             engines_list.append(GoogleScholarPipeline(args, config=config))
+        if "openalex" in config["engine"]:
+            engines_list.append(OpenAlexPipeline(args, config=config))
     else:
         engines_list.append(PubMedPipeline(args, config=config))
         engines_list.append(GoogleScholarPipeline(args, config=config))
+        engines_list.append(OpenAlexPipeline(args, config=config))
 
     # init list of papers
     output_list = []
