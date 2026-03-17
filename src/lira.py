@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List
 from datetime import datetime, timedelta
 from itertools import product
+from numpy import source
 import requests
 from pymed import PubMed
 import pyalex
@@ -617,11 +618,9 @@ class OpenAlexPipeline(EnginePipeline):
             if "journal" in kwargs:
                 article_journal = kwargs["journal"]
             else:
-                article_journal = (
-                    article.get("primary_location", {})
-                    .get("source", {})
-                    .get("display_name")
-                )
+                primary_location = article.get("primary_location")
+                source = primary_location.get("source") if (primary_location and isinstance(primary_location, dict)) else None
+                article_journal = source.get("display_name") if (source and isinstance(source, dict)) else None
 
             # get article date
             article_date = article.get("publication_date")
